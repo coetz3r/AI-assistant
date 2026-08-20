@@ -141,9 +141,24 @@ function animateVisualizer() {
 
 function stopSession() {
     stopPlayback();
-    if (ws) ws.close();
-    if (micStream) micStream.getTracks().forEach(track => track.stop());
-    if (audioCtx) audioCtx.close();
+    
+    // Nullify onclose so ws.close() does not trigger stopSession() again
+    if (ws) {
+        ws.onclose = null;
+        ws.close();
+        ws = null;
+    }
+    
+    if (micStream) {
+        micStream.getTracks().forEach(track => track.stop());
+        micStream = null;
+    }
+
+    // Check that context is not already closed before shutting it down
+    if (audioCtx && audioCtx.state !== 'closed') {
+        audioCtx.close();
+        audioCtx = null;
+    }
 
     statusEl.textContent = 'Disconnected';
     statusEl.classList.remove('connected');
