@@ -1,25 +1,62 @@
-# AI-Assistant Web Interface
+# AI Assistant - Self-Hosted Voice Companion
 
-A lightweight, responsive web interface built with vanilla HTML and CSS to interact with local AI models and serve web controls.
+A lightweight, privacy-focused, locally hosted AI voice assistant built with Python, WebSockets, and HTML5. This project turns a local Linux server into a responsive, real-time voice interface accessible from any desktop or mobile browser via secure local network or Tailscale connections.
+
+---
 
 ## Features
 
-- **Responsive UI:** Dynamic layout designed for mobile and desktop screens.
-- **Custom Overlays:** Built-in floating controls and preview panel.
-- **Automated Deployment:** Integrated Git workflow with scheduled background server synchronization.
+- **Local Inference:** Built on `llama-cpp-python` for text generation and `faster-whisper` for lightweight speech-to-text.
+- **Natural TTS:** Speech synthesis powered by `piper-tts` for fast, natural-sounding audio output.
+- **Real-Time WebSockets:** Low-latency bi-directional voice and text streaming over an encrypted HTTPS/WSS server using `aiohttp`.
+- **Mobile & Desktop Ready:** PWA-ready web UI with custom launcher icons and automatic reconnection handling for on-the-go workspace use.
+- **Tailscale Support:** Secure remote network access without exposing server ports to the public internet.
 
-## Local Server Setup
+---
 
-To run the local server manually:
+## Tech Stack
 
-python3 -m http.server 8000 --bind 0.0.0.0
+- **Backend:** Python 3, `aiohttp`, `llama-cpp-python`, `faster-whisper`, `piper-tts`, `wave`
+- **Frontend:** Vanilla HTML5, JavaScript (Web Audio API / WebSockets), CSS
+- **Network & Security:** SSL/TLS (Self-Signed Certificates), Tailscale
 
-Access the interface on your local network or Tailscale mesh:
+---
 
-http://<SERVER-IP>:8000
+## Architecture & Data Flow
 
-## Auto-Pull Cron Configuration
+1. **Client Audio Capture:** The browser captures microphone audio via the Web Audio API and streams binary PCM audio chunks over a secure WebSocket (`/ws`).
+2. **STT Processing:** `server.py` formats incoming audio with standard WAV headers and passes the buffer to `faster-whisper` for transcription.
+3. **LLM Reasoning:** Transcribed text is processed by `llama-cpp-python` (Llama 3.2 1B Instruct) with system context and conversation history.
+4. **TTS Synthesis:** `piper-tts` synthesizes the generated response into WAV format, which is sent back over the WebSocket and played directly in the browser.
 
-To keep the server automatically updated with the latest GitHub pushes, run the included auto_pull.sh script via cron:
+---
 
-* * * * * /home/piet3r/AI-assistant/auto_pull.sh
+## Setup & Usage
+
+### 1. Clone the Repository
+```bash
+git clone https://github.com/coetz3r/AI-assistant.git
+cd AI-assistant
+```
+
+### 2. Set Up Environment & Dependencies
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install aiohttp llama-cpp-python faster-whisper piper-tts
+```
+
+### 3. Generate SSL Certificates
+```bash
+openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes
+```
+
+### 4. Run the Server
+```bash
+python3 server.py
+```
+
+### 5. Access the Assistant
+Open your browser and navigate to:
+- **Local:** `https://localhost:8000`
+- **Tailscale / LAN:** `https://<YOUR-SERVER-IP>:8000`
