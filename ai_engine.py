@@ -1,5 +1,6 @@
 import os
 import wave
+import asyncio
 from llama_cpp import Llama
 from faster_whisper import WhisperModel
 from piper.voice import PiperVoice
@@ -34,20 +35,24 @@ class VoiceAIEngine:
         segments, _ = self.stt.transcribe(audio_file_path)
         return "".join([segment.text for segment in segments]).strip()
 
-    def generate_response(self, user_text):
+    async def generate_response(self, user_text):
         """Generates response text while retaining a sliding memory buffer."""
         self.history.append({"role": "user", "content": user_text})
-        
-        # Keep last 10 turns to conserve RAM and context space
+    
         if len(self.history) > 11:
             self.history = [self.history[0]] + self.history[-10:]
 
-        response = self.llm.create_chat_completion(
-            messages=self.history,
-            max_tokens=256,
-            temperature=0.7
+        # Run blocking Llama inference in a separate thread
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(
+            None, 
+            lambda: self.llm.create_chat_completion(
+                messages=self.history,
+                max_tokens=256,
+                temperature=0.7
+            )
         )
-        
+    
         reply = response["choices"][0]["message"]["content"]
         self.history.append({"role": "assistant", "content": reply})
         return reply

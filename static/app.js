@@ -15,9 +15,17 @@ let currentAudioSource = null;
 
 startBtn.addEventListener('click', async () => {
     try {
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+        if (!audioCtx) {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+        }
+
+        // Resume audio context if suspended by mobile browser power policy
+        if (audioCtx.state === 'suspended') {
+            await audioCtx.resume();
+        }
+
         micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-        
+
         const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
         ws = new WebSocket(`${protocol}//${location.host}/ws`);
         ws.binaryType = 'arraybuffer';
@@ -98,7 +106,6 @@ function stopPlayback() {
 }
 
 function playIncomingAudio(arrayBuffer) {
-    // Stop any existing output before starting new audio
     stopPlayback();
     visualizer.classList.remove('idle');
 
@@ -141,20 +148,20 @@ function animateVisualizer() {
 
 function stopSession() {
     stopPlayback();
-    
-    // Nullify onclose so ws.close() does not trigger stopSession() again
+
+    // Prevent recursive loop when manually closing WebSocket
     if (ws) {
         ws.onclose = null;
         ws.close();
         ws = null;
     }
-    
+
     if (micStream) {
         micStream.getTracks().forEach(track => track.stop());
         micStream = null;
     }
 
-    // Check that context is not already closed before shutting it down
+    // Check context status before closing to prevent DOMExceptions
     if (audioCtx && audioCtx.state !== 'closed') {
         audioCtx.close();
         audioCtx = null;
