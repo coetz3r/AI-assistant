@@ -223,3 +223,27 @@ button:active:not(:disabled) {
                  max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
     }
 }
+
+/* Interrupt animation */
+.visualizer.interrupt .bar {
+    animation: interruptFlash 0.3s ease-in-out;
+}
+
+@keyframes interruptFlash {
+    0%, 100% { 
+        background: rgba(255, 255, 255, 0.4);
+        transform: scale(1);
+    }
+    50% { 
+        background: #ff6b6b;
+        transform: scale(1.5);
+        box-shadow: 0 0 20px rgba(255, 107, 107, 0.5);
+    }
+}
+
+/* Mobile-specific adjustments */
+@media (max-width: 768px) {
+    .visualizer.interrupt .bar {
+        animation-duration: 0.2s; /* Faster flash on mobile */
+    }
+}

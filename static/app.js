@@ -20,9 +20,38 @@ const SAMPLE_RATE = 16000;
 const AUDIO_BUFFER_SIZE = 4096;
 const RMS_THRESHOLD = 0.02;
 
+// Interrupt System Configuration
+const INTERRUPT_CONFIG = {
+    RMS_THRESHOLD: 0.02,        // Voice detection sensitivity
+    MIN_INTERRUPT_DURATION: 200, // Minimum ms of speech to trigger interrupt
+    COOLDOWN_MS: 500            // Prevent rapid interrupt triggers
+};
+
+// Interrupt System State
+let interruptState = {
+    isInterrupting: false,
+    lastInterruptTime: 0,
+    speechStartTime: 0,
+    isSpeaking: false
+};
+
+// Mobile audio context flag
+let audioContextStarted = false;
+
 // Event Listeners
 startBtn.addEventListener('click', startVoiceSession);
 stopBtn.addEventListener('click', stopSession);
+
+// Add touch event for mobile audio context resume
+document.addEventListener('touchstart', function resumeAudio() {
+    if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume().then(() => {
+            console.log('Audio context resumed via touch');
+        }).catch(err => {
+            console.warn('Failed to resume audio context:', err);
+        });
+    }
+}, { once: false });
 
 async function startVoiceSession() {
     try {
@@ -33,27 +62,40 @@ async function startVoiceSession() {
             });
         }
 
-        // Resume if suspended (mobile browser policy)
+        // CRITICAL: Mobile browsers need user gesture to start audio
         if (audioCtx.state === 'suspended') {
             await audioCtx.resume();
         }
 
-        // Get microphone access
-        micStream = await navigator.mediaDevices.getUserMedia({ 
+        // Check if audio context is actually running
+        console.log('Audio context state:', audioCtx.state);
+
+        // Get microphone access with mobile-optimized constraints
+        const constraints = {
             audio: {
                 channelCount: 1,
                 sampleRate: SAMPLE_RATE,
                 echoCancellation: true,
                 noiseSuppression: true,
                 autoGainControl: true
-            }, 
-            video: false 
+            },
+            video: false
+        };
+
+        micStream = await navigator.mediaDevices.getUserMedia(constraints);
+
+        // Log microphone info for debugging
+        const audioTrack = micStream.getAudioTracks()[0];
+        console.log('Microphone track:', {
+            label: audioTrack.label,
+            enabled: audioTrack.enabled,
+            settings: audioTrack.getSettings()
         });
 
         // Determine protocol (WSS for HTTPS, WS for HTTP)
         const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = protocol + '//' + location.host + '/ws';
-        
+
         console.log('Connecting to: ' + wsUrl);
         ws = new WebSocket(wsUrl);
         ws.binaryType = 'arraybuffer';
@@ -92,10 +134,16 @@ async function startVoiceSession() {
 
     } catch (err) {
         console.error('Error starting voice session:', err);
+        
+        // Enhanced error handling for mobile
         if (err.name === 'NotAllowedError') {
-            alert('Microphone access denied. Please allow microphone permissions and try again.');
+            alert('Microphone access denied. Please allow microphone permissions in your browser settings and try again.');
         } else if (err.name === 'NotFoundError') {
             alert('No microphone found. Please connect a microphone and try again.');
+        } else if (err.name === 'NotSupportedError') {
+            alert('Your browser does not support the required audio features. Please try Chrome or Safari.');
+        } else if (err.name === 'SecurityError') {
+            alert('Security error. Please try again or use HTTPS.');
         } else {
             alert('Error: ' + (err.message || 'Unknown error occurred'));
         }
@@ -106,11 +154,16 @@ async function startVoiceSession() {
 function setupMicStreaming() {
     if (!audioCtx || !micStream) return;
 
+    // Ensure audio context is running
+    if (audioCtx.state === 'suspended') {
+        audioCtx.resume().catch(err => console.warn('Could not resume audio context:', err));
+    }
+
     var source = audioCtx.createMediaStreamSource(micStream);
-    
+
     // Create audio processor for streaming
     audioProcessor = audioCtx.createScriptProcessor(AUDIO_BUFFER_SIZE, 1, 1);
-    
+
     audioProcessor.onaudioprocess = function(e) {
         if (!ws || ws.readyState !== WebSocket.OPEN || !isRecording) {
             return;
@@ -119,17 +172,43 @@ function setupMicStreaming() {
         try {
             var inputData = e.inputBuffer.getChannelData(0);
 
-            // Barge-In Logic: Calculate RMS volume level
+            // Calculate RMS volume level
             var sum = 0;
             for (var i = 0; i < inputData.length; i++) {
                 sum += inputData[i] * inputData[i];
             }
             var rms = Math.sqrt(sum / inputData.length);
 
-            // Interrupt playback if voice threshold is exceeded
-            if (rms > RMS_THRESHOLD && isAudioPlaying) {
-                console.log('Barge-in detected - interrupting playback');
-                stopPlayback();
+            // Enhanced Barge-In Logic with duration detection
+            var now = performance.now();
+
+            // Detect speech start
+            if (rms > INTERRUPT_CONFIG.RMS_THRESHOLD && !interruptState.isSpeaking) {
+                interruptState.isSpeaking = true;
+                interruptState.speechStartTime = now;
+            }
+
+            // Detect speech end or continued speech
+            if (rms < INTERRUPT_CONFIG.RMS_THRESHOLD && interruptState.isSpeaking) {
+                interruptState.isSpeaking = false;
+                var speechDuration = now - interruptState.speechStartTime;
+
+                // Trigger interrupt if speech was long enough
+                if (speechDuration > INTERRUPT_CONFIG.MIN_INTERRUPT_DURATION &&
+                    now - interruptState.lastInterruptTime > INTERRUPT_CONFIG.COOLDOWN_MS) {
+
+                    if (isAudioPlaying) {
+                        console.log('Interrupt triggered - speech duration:', speechDuration);
+                        stopPlayback();
+                        interruptState.lastInterruptTime = now;
+
+                        // Visual feedback for interrupt
+                        visualizer.classList.add('interrupt');
+                        setTimeout(function() {
+                            visualizer.classList.remove('interrupt');
+                        }, 500);
+                    }
+                }
             }
 
             // Convert Float32 to Int16 PCM
@@ -139,9 +218,9 @@ function setupMicStreaming() {
                 var sample = Math.max(-1, Math.min(1, inputData[j]));
                 pcm16[j] = sample * 0x7FFF;
             }
-            
+
             ws.send(pcm16.buffer);
-            
+
         } catch (err) {
             console.error('Error processing audio:', err);
         }
@@ -184,6 +263,8 @@ function playIncomingAudio(arrayBuffer) {
             console.log('Playing audio: ' + audioBuffer.duration.toFixed(2) + ' seconds');
         }, function(error) {
             console.error('Error decoding audio:', error);
+            visualizer.classList.add('idle');
+            isAudioPlaying = false;
         });
 
     } catch (err) {
@@ -209,17 +290,17 @@ function stopPlayback() {
 
 function animateVisualizer() {
     if (!playbackAnalyser) return;
-    
+
     var dataArray = new Uint8Array(playbackAnalyser.frequencyBinCount);
 
     function draw() {
         if (!playbackAnalyser) return;
-        
+
         requestAnimationFrame(draw);
-        
+
         try {
             playbackAnalyser.getByteFrequencyData(dataArray);
-            
+
             for (var i = 0; i < bars.length; i++) {
                 var value = dataArray[i] || 0;
                 // Scale height: 8px minimum, up to 110px maximum
@@ -236,7 +317,7 @@ function animateVisualizer() {
 function stopSession() {
     console.log('Stopping session...');
     isRecording = false;
-    
+
     // Stop playback
     stopPlayback();
     if (playbackAnalyser) {
@@ -281,6 +362,14 @@ function stopSession() {
         audioCtx = null;
     }
 
+    // Reset interrupt state
+    interruptState = {
+        isInterrupting: false,
+        lastInterruptTime: 0,
+        speechStartTime: 0,
+        isSpeaking: false
+    };
+
     // Update UI
     statusEl.textContent = 'Disconnected';
     statusEl.classList.remove('connected');
@@ -294,6 +383,7 @@ function stopSession() {
 // Keyboard shortcuts
 document.addEventListener('keydown', function(e) {
     if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault(); // Prevent page scroll
         if (!startBtn.disabled) {
             startBtn.click();
         } else if (!stopBtn.disabled) {
@@ -314,7 +404,10 @@ document.addEventListener('visibilitychange', function() {
     } else if (!document.hidden && isRecording) {
         console.log('Tab visible - resuming recording');
         if (micStream && audioCtx) {
-            setupMicStreaming();
+            // Reconnect audio processor
+            if (!audioProcessor) {
+                setupMicStreaming();
+            }
         }
     }
 });
