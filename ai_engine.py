@@ -11,7 +11,7 @@ from piper import PiperVoice
 class VoiceAIEngine:
     def __init__(
         self,
-        llm_model_path="models/llama-3.2-1b-instruct.Q4_K_M.gguf",
+        llm_model_path="models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
         tts_model_path="models/en_US-lessac-medium.onnx",
         memory_file="conversation_memory.json"
     ):
@@ -19,9 +19,9 @@ class VoiceAIEngine:
         self.llm = Llama(
             model_path="models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
             n_ctx=512,
-            n_threads=2,
+            n_threads=1,
             n_gpu_layers=0,  # keep on CPU
-            n_batch=128,
+            n_batch=64,
             verbose=False
         )
 
