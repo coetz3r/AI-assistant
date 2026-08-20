@@ -2,6 +2,7 @@ import os
 import json
 import asyncio
 import ssl
+import wave
 from aiohttp import web, WSMsgType
 from ai_engine import VoiceAIEngine
 
@@ -20,35 +21,44 @@ async def handle_websocket(request):
 
     async for msg in ws:
         if msg.type == WSMsgType.BINARY:
+            # Skip tiny empty buffers
+            if len(msg.data) < 100:
+                continue
+
             temp_input = "temp_user_input.wav"
-            with open(temp_input, "wb") as f:
-                f.write(msg.data)
+            
+            # Write raw PCM data into a valid 16kHz mono WAV container
+            with wave.open(temp_input, "wb") as wf:
+                wf.setnchannels(1)       # Mono
+                wf.setsampwidth(2)      # 16-bit PCM (2 bytes per sample)
+                wf.setframerate(16000)  # 16kHz sample rate
+                wf.writeframes(msg.data)
             
             user_text = engine.transcribe(temp_input)
             
             if user_text:
-                # Added 'await' here because generate_response handles cloud API requests
                 reply_text = await engine.generate_response(user_text)
                 audio_output_path = engine.synthesize_speech(reply_text)
                 
-                with open(audio_output_path, "rb") as f:
-                    await ws.send_bytes(f.read())
+                if audio_output_path and os.path.exists(audio_output_path):
+                    with open(audio_output_path, "rb") as f:
+                        await ws.send_bytes(f.read())
 
         elif msg.type == WSMsgType.TEXT:
             data = json.loads(msg.data)
             if data.get("type") == "text_query":
-                # Added 'await' here as well
                 reply_text = await engine.generate_response(data["text"])
                 audio_output_path = engine.synthesize_speech(reply_text)
-                with open(audio_output_path, "rb") as f:
-                    await ws.send_bytes(f.read())
+                
+                if audio_output_path and os.path.exists(audio_output_path):
+                    with open(audio_output_path, "rb") as f:
+                        await ws.send_bytes(f.read())
 
     return ws
 
 app.router.add_get('/', handle_index)
 app.router.add_get('/ws', handle_websocket)
 
-# Entry point sits cleanly at the bottom after app, routes, and SSL are fully configured
 if __name__ == '__main__':
     ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
     ssl_context.load_cert_chain(certfile='cert.pem', keyfile='key.pem')
