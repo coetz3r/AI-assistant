@@ -16,12 +16,12 @@ class VoiceAIEngine:
         memory_file="conversation_memory.json"
     ):
         # 1. Initialize LLM Engine
-        # Lower n_threads (e.g. to 2) if your laptop is struggling
         self.llm = Llama(
             model_path="models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
-            n_ctx=1024,
+            n_ctx=512,
             n_threads=2,
             n_gpu_layers=0,  # keep on CPU
+            n_batch=128,
             verbose=False
         )
 

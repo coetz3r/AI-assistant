@@ -69,7 +69,7 @@ async def handle_websocket(request):
     print("WebSocket client connected")
 
     audio_buffer = bytearray()
-    BUFFER_SIZE = 64000  # ~2 seconds at 16 kHz, 16-bit mono
+    BUFFER_SIZE = 128000  # ~4 seconds at 16 kHz, 16-bit mono
 
     async for msg in ws:
         if msg.type == WSMsgType.BINARY:
