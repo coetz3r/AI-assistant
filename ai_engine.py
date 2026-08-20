@@ -61,5 +61,10 @@ class VoiceAIEngine:
         """Converts text response to audio file via Piper."""
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         with wave.open(output_path, "wb") as wav_file:
+            # Explicitly define WAV header specs required by Python's wave module
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(self.tts_voice.config.sample_rate)
+            
             self.tts_voice.synthesize(text, wav_file)
         return output_path
