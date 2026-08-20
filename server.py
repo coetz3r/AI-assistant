@@ -1,6 +1,7 @@
 import os
 import json
 import asyncio
+import ssl
 from aiohttp import web, WSMsgType
 from ai_engine import VoiceAIEngine
 
@@ -26,7 +27,8 @@ async def handle_websocket(request):
             user_text = engine.transcribe(temp_input)
             
             if user_text:
-                reply_text = engine.generate_response(user_text)
+                # Added 'await' here because generate_response handles cloud API requests
+                reply_text = await engine.generate_response(user_text)
                 audio_output_path = engine.synthesize_speech(reply_text)
                 
                 with open(audio_output_path, "rb") as f:
@@ -35,7 +37,8 @@ async def handle_websocket(request):
         elif msg.type == WSMsgType.TEXT:
             data = json.loads(msg.data)
             if data.get("type") == "text_query":
-                reply_text = engine.generate_response(data["text"])
+                # Added 'await' here as well
+                reply_text = await engine.generate_response(data["text"])
                 audio_output_path = engine.synthesize_speech(reply_text)
                 with open(audio_output_path, "rb") as f:
                     await ws.send_bytes(f.read())
@@ -45,5 +48,9 @@ async def handle_websocket(request):
 app.router.add_get('/', handle_index)
 app.router.add_get('/ws', handle_websocket)
 
+# Entry point sits cleanly at the bottom after app, routes, and SSL are fully configured
 if __name__ == '__main__':
-    web.run_app(app, host='0.0.0.0', port=8000)
+    ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+    ssl_context.load_cert_chain(certfile='cert.pem', keyfile='key.pem')
+
+    web.run_app(app, host='0.0.0.0', port=8000, ssl_context=ssl_context)

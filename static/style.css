@@ -1,0 +1,85 @@
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    background-color: #0f172a;
+    color: #f8fafc;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    gap: 2rem;
+}
+
+.status-badge {
+    font-size: 0.875rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding: 0.5rem 1rem;
+    border-radius: 9999px;
+    background-color: #1e293b;
+    border: 1px solid #334155;
+    color: #94a3b8;
+}
+
+.status-badge.connected {
+    color: #38bdf8;
+    border-color: #0284c7;
+}
+
+/* Equalizer Bar Container */
+.visualizer {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    height: 120px;
+    width: 100%;
+    max-width: 300px;
+}
+
+.bar {
+    width: 12px;
+    height: 16px;
+    background-color: #38bdf8;
+    border-radius: 6px;
+    transition: height 0.05s ease, background-color 0.2s ease;
+}
+
+/* Inactive visualizer state */
+.visualizer.idle .bar {
+    height: 8px !important;
+    background-color: #334155;
+}
+
+.controls {
+    display: flex;
+    gap: 1rem;
+}
+
+button {
+    background-color: #0284c7;
+    color: white;
+    border: none;
+    padding: 0.75rem 1.75rem;
+    font-size: 1rem;
+    font-weight: 600;
+    border-radius: 0.5rem;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+button:hover {
+    background-color: #0369a1;
+}
+
+button:disabled {
+    background-color: #334155;
+    cursor: not-allowed;
+    color: #64748b;
+}
