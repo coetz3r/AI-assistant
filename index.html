@@ -1,271 +1,249 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI Video Assistant</title>
-  <style>
-    :root {
-      --bg-color: #0b0f19;
-      --panel-bg: rgba(18, 26, 43, 0.75);
-      --border-color: rgba(0, 229, 255, 0.2);
-      --accent-cyan: #00e5ff;
-      --text-main: #e2e8f0;
-      --text-muted: #94a3b8;
-    }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice AI Assistant</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
 
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    }
+        body {
+            background-color: #0f172a;
+            color: #f8fafc;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            gap: 2rem;
+        }
 
-    body {
-      background-color: var(--bg-color);
-      color: var(--text-main);
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-    }
+        .status-badge {
+            font-size: 0.875rem;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            padding: 0.5rem 1rem;
+            border-radius: 9999px;
+            background-color: #1e293b;
+            border: 1px solid #334155;
+            color: #94a3b8;
+        }
 
-    /* Top Navigation */
-    header {
-      padding: 1rem 1.5rem;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      border-bottom: 1px solid var(--border-color);
-      background: rgba(11, 15, 25, 0.9);
-      backdrop-filter: blur(10px);
-    }
+        .status-badge.connected {
+            color: #38bdf8;
+            border-color: #0284c7;
+        }
 
-    .brand {
-      font-size: 1.25rem;
-      font-weight: 700;
-      letter-spacing: 1px;
-      color: #fff;
-    }
+        /* Equalizer Bar Container */
+        .visualizer {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            height: 120px;
+            width: 100%;
+            max-width: 300px;
+        }
 
-    .status-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      font-size: 0.85rem;
-      color: var(--accent-cyan);
-      background: rgba(0, 229, 255, 0.1);
-      padding: 0.35rem 0.75rem;
-      border-radius: 20px;
-      border: 1px solid var(--border-color);
-    }
+        .bar {
+            width: 12px;
+            height: 16px;
+            background-color: #38bdf8;
+            border-radius: 6px;
+            transition: height 0.05s ease, background-color 0.2s ease;
+        }
 
-    .status-dot {
-      width: 8px;
-      height: 8px;
-      background-color: var(--accent-cyan);
-      border-radius: 50%;
-      box-shadow: 0 0 8px var(--accent-cyan);
-    }
+        /* Inactive visualizer state */
+        .visualizer.idle .bar {
+            height: 8px !important;
+            background-color: #334155;
+        }
 
-    /* Main Container */
-    main {
-      flex: 1;
-      display: grid;
-      grid-template-columns: 1fr 340px;
-      gap: 1.5rem;
-      padding: 1.5rem;
-      height: calc(100vh - 65px);
-    }
+        .controls {
+            display: flex;
+            gap: 1rem;
+        }
 
-    /* Video Viewport */
-    .video-container {
-      position: relative;
-      background: #000;
-      border-radius: 16px;
-      overflow: hidden;
-      border: 1px solid var(--border-color);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-    }
+        button {
+            background-color: #0284c7;
+            color: white;
+            border: none;
+            padding: 0.75rem 1.75rem;
+            font-size: 1rem;
+            font-weight: 600;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
 
-    /* The Avatar Feed */
-    .avatar-feed {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
+        button:hover {
+            background-color: #0369a1;
+        }
 
-    /* User Self-Preview Overlay */
-    .user-preview {
-      position: absolute;
-      bottom: 5rem;
-      right: 1.5rem;
-      width: 160px;
-      aspect-ratio: 16/9;
-      background: #1e293b;
-      border-radius: 10px;
-      overflow: hidden;
-      border: 2px solid var(--border-color);
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
-    }
-
-    .user-preview video {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-
-    /* Controls Overlay */
-    .controls-bar {
-      position: absolute;
-      bottom: 1.5rem;
-      left: 50%;
-      transform: translateX(-50%);
-      display: flex;
-      gap: 1rem;
-      background: rgba(11, 15, 25, 0.85);
-      padding: 0.75rem 1.25rem;
-      border-radius: 40px;
-      border: 1px solid var(--border-color);
-      backdrop-filter: blur(10px);
-    }
-
-    .ctrl-btn {
-      background: rgba(255, 255, 255, 0.1);
-      border: none;
-      color: #fff;
-      width: 44px;
-      height: 44px;
-      border-radius: 50%;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: all 0.2s ease;
-    }
-
-    .ctrl-btn:hover {
-      background: rgba(0, 229, 255, 0.2);
-      color: var(--accent-cyan);
-    }
-
-    .ctrl-btn.active {
-      background: #ef4444;
-      color: #fff;
-    }
-
-    /* Side Panel */
-    .side-panel {
-      background: var(--panel-bg);
-      border-radius: 16px;
-      border: 1px solid var(--border-color);
-      display: flex;
-      flex-direction: column;
-      backdrop-filter: blur(10px);
-      overflow: hidden;
-    }
-
-    .transcript-header {
-      padding: 1rem;
-      border-bottom: 1px solid var(--border-color);
-      font-weight: 600;
-      font-size: 0.95rem;
-    }
-
-    .transcript-body {
-      flex: 1;
-      padding: 1rem;
-      overflow-y: auto;
-      display: flex;
-      flex-direction: column;
-      gap: 1rem;
-    }
-
-    .msg {
-      max-width: 85%;
-      padding: 0.75rem 1rem;
-      border-radius: 12px;
-      font-size: 0.9rem;
-      line-height: 1.4;
-    }
-
-    .msg.ai {
-      align-self: flex-start;
-      background: rgba(0, 229, 255, 0.1);
-      border: 1px solid rgba(0, 229, 255, 0.2);
-    }
-
-    .msg.user {
-      align-self: flex-end;
-      background: #2563eb;
-      color: #fff;
-    }
-
-    /* Responsive adjustment */
-    @media (max-width: 850px) {
-      main {
-        grid-template-columns: 1fr;
-        grid-template-rows: 1fr 250px;
-      }
-    }
-  </style>
+        button:disabled {
+            background-color: #334155;
+            cursor: not-allowed;
+            color: #64748b;
+        }
+    </style>
 </head>
 <body>
 
-  <header>
-    <div class="brand">LUNA AI</div>
-    <div class="status-badge">
-      <span class="status-dot"></span> Streaming Connected
-    </div>
-  </header>
+    <div id="status" class="status-badge">Disconnected</div>
 
-  <main>
-    <!-- AI Stream Viewport -->
-    <div class="video-container">
-      <!-- AI Avatar Stream Feed -->
-      <img src="watermarked_img_8122240971740277079.jpg" alt="AI Avatar Stream" class="avatar-feed">
-
-      <!-- Self Camera Preview -->
-      <div class="user-preview">
-        <video id="user-webcam" autoplay muted playsinline></video>
-      </div>
-
-      <!-- Call Controls -->
-      <div class="controls-bar">
-        <button class="ctrl-btn" id="toggle-mic" title="Toggle Mic">🎤</button>
-        <button class="ctrl-btn" id="toggle-cam" title="Toggle Camera">📹</button>
-        <button class="ctrl-btn active" title="End Session">📞</button>
-      </div>
+    <!-- Animated Equalizer Bars -->
+    <div id="visualizer" class="visualizer idle">
+        <div class="bar"></div>
+        <div class="bar"></div>
+        <div class="bar"></div>
+        <div class="bar"></div>
+        <div class="bar"></div>
+        <div class="bar"></div>
+        <div class="bar"></div>
     </div>
 
-    <!-- Live Transcript & Sidebar -->
-    <div class="side-panel">
-      <div class="transcript-header">Real-time Transcript</div>
-      <div class="transcript-body" id="transcript">
-        <div class="msg ai">Hello! I'm online and ready. How can I help you today?</div>
-        <div class="msg user">I need to check the setup for our repo push.</div>
-        <div class="msg ai">Everything looks fully synced on main. Let me know what we should build next!</div>
-      </div>
+    <div class="controls">
+        <button id="startBtn">Start Voice</button>
+        <button id="stopBtn" disabled>Stop</button>
     </div>
-  </main>
 
-  <script>
-    // Enable local user webcam preview
-    const userVideo = document.getElementById('user-webcam');
-    
-    async function initWebcam() {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-        userVideo.srcObject = stream;
-      } catch (err) {
-        console.warn('Webcam access declined or unavailable:', err);
-      }
-    }
+    <script>
+        const statusEl = document.getElementById('status');
+        const visualizer = document.getElementById('visualizer');
+        const bars = document.querySelectorAll('.bar');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
 
-    initWebcam();
-  </script>
+        let ws = null;
+        let audioCtx = null;
+        let micStream = null;
+        let audioProcessor = null;
+
+        // Sound Output Synthesis Visualizer setup
+        let playbackAnalyser = null;
+
+        startBtn.addEventListener('click', async () => {
+            try {
+                // Initialize Audio Context
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+                
+                // Get Microphone Access
+                micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+                
+                // Establish WSS Connection
+                const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+                ws = new WebSocket(`${protocol}//${location.host}/ws`);
+                ws.binaryType = 'arraybuffer';
+
+                ws.onopen = () => {
+                    statusEl.textContent = 'Listening / Connected';
+                    statusEl.classList.add('connected');
+                    startBtn.disabled = true;
+                    stopBtn.disabled = false;
+
+                    setupMicStreaming();
+                };
+
+                ws.onmessage = async (event) => {
+                    if (event.data instanceof ArrayBuffer) {
+                        // Received TTS Audio Chunk from Python
+                        playIncomingAudio(event.data);
+                    }
+                };
+
+                ws.onclose = () => {
+                    stopSession();
+                };
+
+            } catch (err) {
+                console.error('Error starting voice stream:', err);
+                alert('Microphone access or WebSocket connection failed.');
+            }
+        });
+
+        stopBtn.addEventListener('click', () => {
+            stopSession();
+        });
+
+        function setupMicStreaming() {
+            const source = audioCtx.createMediaStreamSource(micStream);
+            // ScriptProcessor to capture raw PCM frames
+            audioProcessor = audioCtx.createScriptProcessor(4096, 1, 1);
+
+            audioProcessor.onaudioprocess = (e) => {
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    const inputData = e.inputBuffer.getChannelData(0);
+                    // Convert Float32 to Int16 PCM array buffer
+                    const pcm16 = new Int16Array(inputData.length);
+                    for (let i = 0; i < inputData.length; i++) {
+                        pcm16[i] = Math.max(-1, Math.min(1, inputData[i])) * 0x7FFF;
+                    }
+                    ws.send(pcm16.buffer);
+                }
+            };
+
+            source.connect(audioProcessor);
+            audioProcessor.connect(audioCtx.destination);
+        }
+
+        function playIncomingAudio(arrayBuffer) {
+            visualizer.classList.remove('idle');
+
+            // Set up audio analyzer for vertical bar animation
+            if (!playbackAnalyser) {
+                playbackAnalyser = audioCtx.createAnalyser();
+                playbackAnalyser.fftSize = 32;
+                playbackAnalyser.connect(audioCtx.destination);
+                animateVisualizer();
+            }
+
+            // Decode binary audio chunk and play
+            audioCtx.decodeAudioData(arrayBuffer, (buffer) => {
+                const source = audioCtx.createBufferSource();
+                source.buffer = buffer;
+                source.connect(playbackAnalyser);
+                source.start();
+
+                source.onended = () => {
+                    visualizer.classList.add('idle');
+                };
+            });
+        }
+
+        function animateVisualizer() {
+            if (!playbackAnalyser) return;
+            const dataArray = new Uint8Array(playbackAnalyser.frequencyBinCount);
+
+            function draw() {
+                requestAnimationFrame(draw);
+                playbackAnalyser.getByteFrequencyData(dataArray);
+
+                bars.forEach((bar, index) => {
+                    const value = dataArray[index] || 0;
+                    // Scale height between 10px and 110px based on audio output amplitude
+                    const barHeight = Math.max(8, (value / 255) * 110);
+                    bar.style.height = `${barHeight}px`;
+                });
+            }
+            draw();
+        }
+
+        function stopSession() {
+            if (ws) ws.close();
+            if (micStream) micStream.getTracks().forEach(track => track.stop());
+            if (audioCtx) audioCtx.close();
+
+            visualizer.classList.add('idle');
+            statusEl.textContent = 'Disconnected';
+            statusEl.classList.remove('connected');
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+        }
+    </script>
 </body>
 </html>
