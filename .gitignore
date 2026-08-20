@@ -1,1 +1,21 @@
+# Virtual Environments
+.venv/
 venv/
+env/
+
+# Heavy AI Models & Weights
+models/
+*.gguf
+*.onnx
+*.onnx.json
+*.bin
+
+# Temporary & Audio Files
+*.wav
+temp_user_input.wav
+static/*.wav
+
+# Python Cache & OS Files
+__pycache__/
+*.pyc
+.DS_Store
