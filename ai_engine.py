@@ -9,6 +9,7 @@ from faster_whisper import WhisperModel
 from piper import PiperVoice
 from dotenv import load_dotenv
 from groq import AsyncGroq
+import multiprocessing
 
 # Load environment variables from .env file
 load_dotenv()
@@ -28,9 +29,9 @@ class VoiceAIEngine:
         self.llm = Llama(
             model_path=llm_model_path,
             n_ctx=2048,
-            n_threads=1,
+            n_threads=num_cores,
             n_gpu_layers=0,
-            n_batch=128,
+            n_batch=512,
             verbose=False
         )
 
@@ -154,7 +155,12 @@ class VoiceAIEngine:
 
     def transcribe(self, audio_file_path):
         """Converts user speech audio file to text using Whisper STT"""
-        segments, _ = self.stt.transcribe(audio_file_path)
+        segments, _ = self.stt.transcribe(
+            audio_file_path,
+            beam_size=1,           # <-- Speeds up Whisper decoding by 3x on CPU
+            best_of=1,             # <-- Prevents extra calculation passes
+            vad_filter=True        # <-- Ignores background noise automatically
+        )
         return "".join(segment.text for segment in segments).strip()
 
     async def generate_response(self, user_text):
