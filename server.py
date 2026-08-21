@@ -11,7 +11,7 @@ from ai_engine import VoiceAIEngine
 engine = VoiceAIEngine()
 
 app = web.Application()
-app.router.add_static('/static/', path='static', name='static')
+app.router.add_static('/static', path='static', name='static')
 
 # Global lock – only one audio chunk is processed at a time
 processing_lock = asyncio.Lock()

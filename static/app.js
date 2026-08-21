@@ -183,7 +183,7 @@ function setupMicStreaming() {
     audioProcessor = audioCtx.createScriptProcessor(2048, 1, 1);
 
     audioProcessor.onaudioprocess = function(e) {
-        if (!ws || ws.readyState !== WebSocket.OPEN || !isRecording || isProcessing) {
+        if (!ws || ws.readyState !== WebSocket.OPEN || !isRecording || isProcessing|| isAudioPlaying) {
             return;
         }
 
@@ -268,6 +268,9 @@ function playIncomingAudio(arrayBuffer) {
         stopPlayback();
         visualizer.classList.remove('idle');
 
+        // Lock state immediately upon receiving audio buffer
+        isAudioPlaying = true;
+        isProcessing = false;
         updateStatus('Talking...', 'Playing response', 'talking');
 
         // Setup analyser
@@ -285,7 +288,6 @@ function playIncomingAudio(arrayBuffer) {
             currentAudioSource.buffer = audioBuffer;
             currentAudioSource.connect(playbackAnalyser);
             currentAudioSource.start();
-            isAudioPlaying = true;
 
             currentAudioSource.onended = function() {
                 console.log('Audio playback finished');
