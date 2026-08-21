@@ -2,6 +2,7 @@ import os
 import wave
 import asyncio
 import json
+import multiprocessing
 from datetime import datetime
 from collections import deque
 from llama_cpp import Llama
@@ -9,7 +10,6 @@ from faster_whisper import WhisperModel
 from piper import PiperVoice
 from dotenv import load_dotenv
 from groq import AsyncGroq
-import multiprocessing
 
 # Load environment variables from .env file
 load_dotenv()
@@ -25,6 +25,8 @@ class VoiceAIEngine:
         max_history_turns=50,
         use_external_api=True
     ):
+
+        num_cores = max(1, multiprocessing.cpu_count() // 2)
         # 1. Initialize Local LLM Engine
         self.llm = Llama(
             model_path=llm_model_path,
