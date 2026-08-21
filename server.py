@@ -22,9 +22,6 @@ async def handle_index(request):
 
 
 async def process_audio(audio_file, ws):
-    """Process audio file and send response back through WebSocket.
-    Protected by a lock so Whisper + LLM + TTS never run concurrently.
-    """
     async with processing_lock:
         try:
             # Transcribe audio to text
@@ -68,30 +65,24 @@ async def handle_websocket(request):
 
     print("WebSocket client connected")
 
-    audio_buffer = bytearray()
-    BUFFER_SIZE = 128000  # ~4 seconds at 16 kHz, 16-bit mono
+    # Accumulate audio data until VAD triggers on client side
+    # Server now receives complete utterances from client
 
     async for msg in ws:
         if msg.type == WSMsgType.BINARY:
-            audio_buffer.extend(msg.data)
+            # Client sends complete utterances with VAD
+            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_wav:
+                temp_input = temp_wav.name
 
-            # Process when we have enough audio data
-            if len(audio_buffer) >= BUFFER_SIZE:
-                with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_wav:
-                    temp_input = temp_wav.name
+                # Write WAV header + audio data
+                with wave.open(temp_input, "wb") as wf:
+                    wf.setnchannels(1)
+                    wf.setsampwidth(2)
+                    wf.setframerate(16000)
+                    wf.writeframes(msg.data)
 
-                    # Write WAV header + audio data
-                    with wave.open(temp_input, "wb") as wf:
-                        wf.setnchannels(1)
-                        wf.setsampwidth(2)
-                        wf.setframerate(16000)
-                        wf.writeframes(audio_buffer[:BUFFER_SIZE])
-
-                    # Keep leftover data
-                    audio_buffer = audio_buffer[BUFFER_SIZE:]
-
-                    # Run under the lock (via process_audio)
-                    asyncio.create_task(process_audio(temp_input, ws))
+                # Process the audio
+                asyncio.create_task(process_audio(temp_input, ws))
 
         elif msg.type == WSMsgType.TEXT:
             try:
