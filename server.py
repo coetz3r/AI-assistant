@@ -7,13 +7,11 @@ import tempfile
 from aiohttp import web, WSMsgType
 from ai_engine import VoiceAIEngine
 
-# Initialize the engine once when the server boots
 engine = VoiceAIEngine()
 
 app = web.Application()
 app.router.add_static('/static', path='static', name='static')
 
-# Global lock – only one audio chunk is processed at a time
 processing_lock = asyncio.Lock()
 
 
@@ -22,34 +20,37 @@ async def handle_index(request):
 
 
 async def process_audio(audio_file, ws):
-       
     async with processing_lock:
         try:
-            # Transcribe audio to text (reads from file, no microphone)
+            # Transcribe audio file
             user_text = engine.transcribe(audio_file)
 
-            if user_text and user_text.strip():
-                print(f"User said: {user_text}")
-
-                # Generate AI response
-                reply_text = await engine.generate_response(user_text)
-                print(f"AI replied: {reply_text}")
-
-                # Convert response to speech (no microphone)
-                audio_output_path = engine.synthesize_speech(reply_text)
-
-                if audio_output_path and os.path.exists(audio_output_path):
-                    with open(audio_output_path, "rb") as f:
-                        audio_data = f.read()
-                        await ws.send_bytes(audio_data)
-                    print(f"Audio response sent ({len(audio_data)} bytes)")
-                else:
-                    print("Failed to generate audio response")
-                    await ws.send_str(json.dumps({"type": "error", "message": "Couldn't generate a reply, try again."}))
-            else:
-                print("No speech detected or empty transcription")
+            # Noise and hallucination filter
+            cleaned_text = user_text.strip().lower() if user_text else ""
+            ignored_phrases = ["", "[blank_audio]", "you", "thank you.", "thank you", "bye.", "bye"]
             
+            if not cleaned_text or len(cleaned_text) < 2 or cleaned_text in ignored_phrases:
+                print("Ignored background noise or empty transcription.")
                 await ws.send_str(json.dumps({"type": "no_speech"}))
+                return
+
+            print(f"User said: {user_text}")
+
+            # Generate response asynchronously
+            reply_text = await engine.generate_response(user_text)
+            print(f"AI replied: {reply_text}")
+
+            # Synthesize TTS
+            audio_output_path = engine.synthesize_speech(reply_text)
+
+            if audio_output_path and os.path.exists(audio_output_path):
+                with open(audio_output_path, "rb") as f:
+                    audio_data = f.read()
+                    await ws.send_bytes(audio_data)
+                print(f"Audio response sent ({len(audio_data)} bytes)")
+            else:
+                print("Failed to generate audio response")
+                await ws.send_str(json.dumps({"type": "error", "message": "Couldn't generate a reply, try again."}))
 
         except Exception as e:
             print(f"Error processing audio: {e}")
@@ -58,7 +59,6 @@ async def process_audio(audio_file, ws):
             except Exception:
                 pass
         finally:
-            # Clean up temp file
             if os.path.exists(audio_file):
                 try:
                     os.remove(audio_file)
@@ -68,28 +68,23 @@ async def process_audio(audio_file, ws):
 
 
 async def handle_websocket(request):
-
     ws = web.WebSocketResponse()
     await ws.prepare(request)
 
-    print("WebSocket client connected - server microphone is DISABLED")
-
+    print("WebSocket client connected")
     client_sample_rate = 16000
 
     async for msg in ws:
         if msg.type == WSMsgType.BINARY:
-            
             with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_wav:
                 temp_input = temp_wav.name
 
-                # Write WAV header + audio data
                 with wave.open(temp_input, "wb") as wf:
                     wf.setnchannels(1)
                     wf.setsampwidth(2)
                     wf.setframerate(client_sample_rate)
                     wf.writeframes(msg.data)
 
-                # Process the audio (no microphone on server)
                 asyncio.create_task(process_audio(temp_input, ws))
 
         elif msg.type == WSMsgType.TEXT:
@@ -100,7 +95,7 @@ async def handle_websocket(request):
                     reported_rate = data.get("sampleRate")
                     if isinstance(reported_rate, (int, float)) and reported_rate > 0:
                         client_sample_rate = int(reported_rate)
-                        print(f"Client reported audio sample rate: {client_sample_rate} Hz")
+                        print(f"Client reported sample rate: {client_sample_rate} Hz")
                     continue
 
                 if data.get("type") == "text_query":
@@ -130,8 +125,7 @@ async def handle_websocket(request):
 
 
 async def handle_text(request):
-    """Simple text-only endpoint for testing"""
-    return web.json_response({"status": "OK", "message": "Voice AI Assistant is running"})
+    return web.json_response({"status": "OK", "message": "Voice AI Assistant running"})
 
 
 app.router.add_get('/', handle_index)
@@ -142,19 +136,9 @@ app.router.add_get('/api/status', handle_text)
 if __name__ == '__main__':
     use_ssl = os.path.exists('cert.pem') and os.path.exists('key.pem')
 
-    print("=" * 60)
-    print("SERVER MICROPHONE: DISABLED")
-    print("All audio comes from browser clients via WebSocket")
-    print("Server does NOT have microphone access")
-    print("=" * 60)
-
     if use_ssl:
-        print("Running with SSL (HTTPS/WSS)")
         ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
         ssl_context.load_cert_chain(certfile='cert.pem', keyfile='key.pem')
         web.run_app(app, host='0.0.0.0', port=8000, ssl_context=ssl_context)
     else:
-        print("Running without SSL (HTTP/WS) - For development only")
-        print("To enable SSL, generate certificates with:")
-        print("   openssl req -x509 -newkey rsa:4096 -nodes -out cert.pem -keyout key.pem -days 365")
         web.run_app(app, host='0.0.0.0', port=8000)
