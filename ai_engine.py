@@ -104,7 +104,7 @@ class VoiceAIEngine:
                 json.dump(self.long_term_memory, f, indent=2, ensure_ascii=False)
             
             self.last_save_time = datetime.now()
-            print(f"💾 Memory saved to {self.memory_file}")
+            print(f"Memory saved to {self.memory_file}")
             
         except Exception as e:
             print(f"Error saving memory: {e}")
@@ -369,7 +369,7 @@ class VoiceAIEngine:
                 )
             }
         ]
-        print("🧹 Memory cleared successfully")
+        print("Memory cleared successfully")
 
     def get_memory_stats(self):
         """Get statistics about the current memory"""

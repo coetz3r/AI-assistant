@@ -106,6 +106,10 @@ async function startVoiceSession() {
             isSpeaking = false;
             audioBuffer = [];
             silenceFrames = 0;
+
+            ws.send(JSON.stringify({ type: 'init', sampleRate: audioCtx.sampleRate }));
+            console.log('Reported capture sample rate to server: ' + audioCtx.sampleRate + ' Hz');
+
             setupMicStreaming();
         };
 
@@ -114,6 +118,25 @@ async function startVoiceSession() {
                 console.log('Received audio: ' + event.data.byteLength + ' bytes');
                 isProcessing = false;
                 playIncomingAudio(event.data);
+                return;
+            }
+
+            try {
+                var data = JSON.parse(event.data);
+                console.log('Server message:', data);
+                isProcessing = false;
+
+                if (data.type === 'no_speech') {
+                    if (isRecording) {
+                        updateStatus('Listening', "Didn't catch that, try again", 'listening');
+                    }
+                } else if (data.type === 'error') {
+                    if (isRecording) {
+                        updateStatus('Listening', data.message || 'Something went wrong, try again', 'listening');
+                    }
+                }
+            } catch (e) {
+                console.warn('Unrecognized message from server:', event.data);
             }
         };
 

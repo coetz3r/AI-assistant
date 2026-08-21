@@ -11,7 +11,7 @@ from ai_engine import VoiceAIEngine
 engine = VoiceAIEngine()
 
 app = web.Application()
-app.router.add_static('/static/', path='./static', name='static')
+app.router.add_static('/static/', path='static', name='static')
 
 # Global lock – only one audio chunk is processed at a time
 processing_lock = asyncio.Lock()
@@ -45,11 +45,18 @@ async def process_audio(audio_file, ws):
                     print(f"Audio response sent ({len(audio_data)} bytes)")
                 else:
                     print("Failed to generate audio response")
+                    await ws.send_str(json.dumps({"type": "error", "message": "Couldn't generate a reply, try again."}))
             else:
                 print("No speech detected or empty transcription")
+            
+                await ws.send_str(json.dumps({"type": "no_speech"}))
 
         except Exception as e:
             print(f"Error processing audio: {e}")
+            try:
+                await ws.send_str(json.dumps({"type": "error", "message": "Something went wrong processing that."}))
+            except Exception:
+                pass
         finally:
             # Clean up temp file
             if os.path.exists(audio_file):
@@ -67,10 +74,11 @@ async def handle_websocket(request):
 
     print("WebSocket client connected - server microphone is DISABLED")
 
+    client_sample_rate = 16000
+
     async for msg in ws:
         if msg.type == WSMsgType.BINARY:
-            # Audio data comes from the browser's microphone
-            # Server just processes the received audio file
+            
             with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_wav:
                 temp_input = temp_wav.name
 
@@ -78,7 +86,7 @@ async def handle_websocket(request):
                 with wave.open(temp_input, "wb") as wf:
                     wf.setnchannels(1)
                     wf.setsampwidth(2)
-                    wf.setframerate(16000)
+                    wf.setframerate(client_sample_rate)
                     wf.writeframes(msg.data)
 
                 # Process the audio (no microphone on server)
@@ -87,6 +95,14 @@ async def handle_websocket(request):
         elif msg.type == WSMsgType.TEXT:
             try:
                 data = json.loads(msg.data)
+
+                if data.get("type") == "init":
+                    reported_rate = data.get("sampleRate")
+                    if isinstance(reported_rate, (int, float)) and reported_rate > 0:
+                        client_sample_rate = int(reported_rate)
+                        print(f"Client reported audio sample rate: {client_sample_rate} Hz")
+                    continue
+
                 if data.get("type") == "text_query":
                     user_text = data.get("text", "").strip()
                     if user_text:
@@ -101,6 +117,8 @@ async def handle_websocket(request):
                                 with open(audio_output_path, "rb") as f:
                                     await ws.send_bytes(f.read())
                                 print("Audio response sent")
+                            else:
+                                await ws.send_str(json.dumps({"type": "error", "message": "Couldn't generate a reply, try again."}))
             except json.JSONDecodeError:
                 print("Invalid JSON received")
 
@@ -124,8 +142,6 @@ app.router.add_get('/api/status', handle_text)
 if __name__ == '__main__':
     use_ssl = os.path.exists('cert.pem') and os.path.exists('key.pem')
 
-    # Force no microphone access on server startup
-    # We're not using pyaudio, sounddevice, or any audio input library
     print("=" * 60)
     print("SERVER MICROPHONE: DISABLED")
     print("All audio comes from browser clients via WebSocket")
