@@ -1,5 +1,6 @@
 // DOM Elements
 const statusEl = document.getElementById('status');
+const statusSubEl = document.getElementById('status-sub');
 const visualizer = document.getElementById('visualizer');
 const bars = document.querySelectorAll('.bar');
 const startBtn = document.getElementById('startBtn');
@@ -14,66 +15,65 @@ let playbackAnalyser = null;
 let currentAudioSource = null;
 let isAudioPlaying = false;
 let isRecording = false;
-let isProcessing = false; // Track if we're waiting for a response
-
-// Constants
-const SAMPLE_RATE = 16000;
-const AUDIO_BUFFER_SIZE = 4096;
-const SILENCE_THRESHOLD = 0.005; // Lower threshold for better voice detection
-const MIN_SPEECH_DURATION = 300; // Minimum ms of speech before sending
-const MAX_SILENCE_DURATION = 1500; // Max ms of silence before ending utterance
-
-// Voice Activity Detection State
-let vadState = {
-    isSpeaking: false,
-    speechStartTime: 0,
-    silenceStartTime: 0,
-    audioBuffer: [],
-    isListening: false
-};
-
-// Mobile audio context flag
-let audioContextStarted = false;
+let isProcessing = false;
+let audioBuffer = [];
+let isSpeaking = false;
+let silenceFrames = 0;
+const MAX_SILENCE_FRAMES = 30;
+const MIN_SPEECH_FRAMES = 10;
+const RMS_THRESHOLD = 0.015;
 
 // Event Listeners
 startBtn.addEventListener('click', startVoiceSession);
 stopBtn.addEventListener('click', stopSession);
 
-// Add touch event for mobile audio context resume
+// Status update function
+function updateStatus(mainStatus, subStatus, className) {
+    if (statusEl) {
+        statusEl.textContent = mainStatus;
+        // Remove all status classes
+        statusEl.classList.remove('listening', 'thinking', 'talking', 'connected', 'disconnected');
+        if (className) {
+            statusEl.classList.add(className);
+        }
+    }
+    if (statusSubEl) {
+        statusSubEl.textContent = subStatus || '';
+    }
+}
+
+// Mobile audio context resume
 document.addEventListener('touchstart', function resumeAudio() {
     if (audioCtx && audioCtx.state === 'suspended') {
-        audioCtx.resume().then(() => {
-            console.log('Audio context resumed via touch');
-        }).catch(err => {
-            console.warn('Failed to resume audio context:', err);
-        });
+        audioCtx.resume().catch(err => console.warn('Failed to resume audio context:', err));
     }
 }, { once: false });
 
 async function startVoiceSession() {
     try {
+        updateStatus('Initializing...', 'Starting microphone', 'disconnected');
+
         // Initialize Audio Context
         if (!audioCtx) {
             audioCtx = new (window.AudioContext || window.webkitAudioContext)({ 
-                sampleRate: SAMPLE_RATE 
+                sampleRate: 16000 
             });
         }
 
-        // CRITICAL: Mobile browsers need user gesture to start audio
         if (audioCtx.state === 'suspended') {
             await audioCtx.resume();
         }
 
         console.log('Audio context state:', audioCtx.state);
 
-        // Get microphone access with clean constraints
+        // Clean microphone constraints
         const constraints = {
             audio: {
                 channelCount: 1,
-                sampleRate: SAMPLE_RATE,
-                echoCancellation: false, // Disabled for cleaner capture
-                noiseSuppression: false, // Disabled for cleaner capture
-                autoGainControl: false,  // Disabled for cleaner capture
+                sampleRate: 16000,
+                echoCancellation: false,
+                noiseSuppression: false,
+                autoGainControl: false,
                 latency: 0.01
             },
             video: false
@@ -81,7 +81,6 @@ async function startVoiceSession() {
 
         micStream = await navigator.mediaDevices.getUserMedia(constraints);
 
-        // Log microphone info for debugging
         const audioTrack = micStream.getAudioTracks()[0];
         console.log('Microphone track:', {
             label: audioTrack.label,
@@ -89,7 +88,7 @@ async function startVoiceSession() {
             settings: audioTrack.getSettings()
         });
 
-        // Determine protocol (WSS for HTTPS, WS for HTTP)
+        // Connect WebSocket
         const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = protocol + '//' + location.host + '/ws';
 
@@ -97,35 +96,37 @@ async function startVoiceSession() {
         ws = new WebSocket(wsUrl);
         ws.binaryType = 'arraybuffer';
 
-        // WebSocket event handlers
         ws.onopen = function() {
             console.log('WebSocket connected');
-            statusEl.textContent = 'Listening';
-            statusEl.classList.add('connected');
+            updateStatus('Listening', 'Say something...', 'listening');
             startBtn.disabled = true;
             stopBtn.disabled = false;
             isRecording = true;
             isProcessing = false;
+            isSpeaking = false;
+            audioBuffer = [];
+            silenceFrames = 0;
             setupMicStreaming();
         };
 
         ws.onmessage = function(event) {
             if (event.data instanceof ArrayBuffer) {
                 console.log('Received audio: ' + event.data.byteLength + ' bytes');
+                isProcessing = false;
                 playIncomingAudio(event.data);
             }
         };
 
         ws.onerror = function(error) {
             console.error('WebSocket error:', error);
-            statusEl.textContent = 'Connection Error';
+            updateStatus('Connection Error', 'Check console for details', 'disconnected');
             stopSession();
         };
 
         ws.onclose = function(event) {
             console.log('WebSocket closed: ' + event.code + ' - ' + (event.reason || 'Normal closure'));
             if (event.code !== 1000 && event.code !== 1001) {
-                statusEl.textContent = 'Disconnected - Tap Start to reconnect';
+                updateStatus('Disconnected', 'Tap Start to reconnect', 'disconnected');
             }
             stopSession();
         };
@@ -133,16 +134,14 @@ async function startVoiceSession() {
     } catch (err) {
         console.error('Error starting voice session:', err);
         
-        // Enhanced error handling for mobile
         if (err.name === 'NotAllowedError') {
-            alert('Microphone access denied. Please allow microphone permissions in your browser settings and try again.');
+            updateStatus('Permission Denied', 'Allow microphone access', 'disconnected');
+            alert('Microphone access denied. Please allow microphone permissions.');
         } else if (err.name === 'NotFoundError') {
-            alert('No microphone found. Please connect a microphone and try again.');
-        } else if (err.name === 'NotSupportedError') {
-            alert('Your browser does not support the required audio features. Please try Chrome or Safari.');
-        } else if (err.name === 'SecurityError') {
-            alert('Security error. Please try again or use HTTPS.');
+            updateStatus('No Microphone', 'Connect a microphone', 'disconnected');
+            alert('No microphone found. Please connect a microphone.');
         } else {
+            updateStatus('Error', err.message || 'Unknown error', 'disconnected');
             alert('Error: ' + (err.message || 'Unknown error occurred'));
         }
         stopSession();
@@ -152,15 +151,13 @@ async function startVoiceSession() {
 function setupMicStreaming() {
     if (!audioCtx || !micStream) return;
 
-    // Ensure audio context is running
     if (audioCtx.state === 'suspended') {
         audioCtx.resume().catch(err => console.warn('Could not resume audio context:', err));
     }
 
     var source = audioCtx.createMediaStreamSource(micStream);
-
-    // Create audio processor for streaming with VAD
-    audioProcessor = audioCtx.createScriptProcessor(AUDIO_BUFFER_SIZE, 1, 1);
+    
+    audioProcessor = audioCtx.createScriptProcessor(2048, 1, 1);
 
     audioProcessor.onaudioprocess = function(e) {
         if (!ws || ws.readyState !== WebSocket.OPEN || !isRecording || isProcessing) {
@@ -169,62 +166,43 @@ function setupMicStreaming() {
 
         try {
             var inputData = e.inputBuffer.getChannelData(0);
-
-            // Calculate RMS volume level
+            
             var sum = 0;
             for (var i = 0; i < inputData.length; i++) {
                 sum += inputData[i] * inputData[i];
             }
             var rms = Math.sqrt(sum / inputData.length);
 
-            var now = performance.now();
-
-            // Voice Activity Detection
-            if (rms > SILENCE_THRESHOLD) {
-                // Speech detected
-                if (!vadState.isSpeaking) {
-                    // Speech just started
-                    vadState.isSpeaking = true;
-                    vadState.speechStartTime = now;
-                    vadState.audioBuffer = [];
-                    vadState.isListening = true;
-                    console.log('Speech detected');
-                    statusEl.textContent = 'Speaking...';
+            if (rms > RMS_THRESHOLD) {
+                if (!isSpeaking) {
+                    isSpeaking = true;
+                    silenceFrames = 0;
+                    audioBuffer = [];
+                    updateStatus('Speaking...', 'Listening to you...', 'listening');
+                    console.log('Speech detected - RMS: ' + rms.toFixed(4));
                 }
                 
-                // Buffer audio data
                 var pcm16 = new Int16Array(inputData.length);
                 for (var j = 0; j < inputData.length; j++) {
                     var sample = Math.max(-1, Math.min(1, inputData[j]));
                     pcm16[j] = sample * 0x7FFF;
                 }
-                vadState.audioBuffer.push(pcm16);
-                vadState.silenceStartTime = 0;
-
-            } else if (vadState.isSpeaking) {
-                // Silence after speech
-                if (vadState.silenceStartTime === 0) {
-                    vadState.silenceStartTime = now;
-                }
-
-                // Check if silence duration exceeds threshold
-                if (now - vadState.silenceStartTime > MAX_SILENCE_DURATION) {
-                    // End of utterance - send accumulated audio
-                    var speechDuration = now - vadState.speechStartTime;
-                    
-                    if (speechDuration > MIN_SPEECH_DURATION && vadState.audioBuffer.length > 0) {
-                        console.log('Sending audio - duration: ' + speechDuration.toFixed(0) + 'ms');
-                        sendAudioBuffer(vadState.audioBuffer);
-                        vadState.audioBuffer = [];
-                    }
-                    
-                    vadState.isSpeaking = false;
-                    vadState.isListening = false;
-                    vadState.silenceStartTime = 0;
-                    statusEl.textContent = 'Processing...';
+                audioBuffer.push(pcm16);
+                silenceFrames = 0;
+                
+            } else if (isSpeaking) {
+                silenceFrames++;
+                
+                if (silenceFrames > MAX_SILENCE_FRAMES && audioBuffer.length > MIN_SPEECH_FRAMES) {
+                    console.log('Speech ended - frames: ' + audioBuffer.length + ', silence: ' + silenceFrames);
+                    sendAudioBuffer(audioBuffer);
+                    audioBuffer = [];
+                    isSpeaking = false;
+                    silenceFrames = 0;
+                    updateStatus('Thinking...', 'Processing your request', 'thinking');
                 }
             }
-
+            
         } catch (err) {
             console.error('Error processing audio:', err);
         }
@@ -234,31 +212,26 @@ function setupMicStreaming() {
     audioProcessor.connect(audioCtx.destination);
 }
 
-function sendAudioBuffer(audioBuffers) {
+function sendAudioBuffer(buffers) {
     if (!ws || ws.readyState !== WebSocket.OPEN || isProcessing) return;
     
     try {
         isProcessing = true;
         
-        // Calculate total length
         var totalLength = 0;
-        for (var i = 0; i < audioBuffers.length; i++) {
-            totalLength += audioBuffers[i].length;
+        for (var i = 0; i < buffers.length; i++) {
+            totalLength += buffers[i].length;
         }
         
-        // Combine all buffers into one
         var combined = new Int16Array(totalLength);
         var offset = 0;
-        for (var i = 0; i < audioBuffers.length; i++) {
-            combined.set(audioBuffers[i], offset);
-            offset += audioBuffers[i].length;
+        for (var i = 0; i < buffers.length; i++) {
+            combined.set(buffers[i], offset);
+            offset += buffers[i].length;
         }
         
         ws.send(combined.buffer);
         console.log('Sent audio: ' + combined.length + ' samples');
-        
-        // Reset VAD state
-        vadState.audioBuffer = [];
         
     } catch (err) {
         console.error('Error sending audio:', err);
@@ -268,11 +241,13 @@ function sendAudioBuffer(audioBuffers) {
 
 function playIncomingAudio(arrayBuffer) {
     try {
-        // Stop current playback if any
+        // Stop current playback
         stopPlayback();
         visualizer.classList.remove('idle');
 
-        // Setup analyser for visualizer if not exists
+        updateStatus('Talking...', 'Playing response', 'talking');
+
+        // Setup analyser
         if (!playbackAnalyser) {
             playbackAnalyser = audioCtx.createAnalyser();
             playbackAnalyser.fftSize = 32;
@@ -281,21 +256,27 @@ function playIncomingAudio(arrayBuffer) {
             animateVisualizer();
         }
 
-        // Decode and play audio
+        // Decode and play
         audioCtx.decodeAudioData(arrayBuffer, function(audioBuffer) {
             currentAudioSource = audioCtx.createBufferSource();
             currentAudioSource.buffer = audioBuffer;
             currentAudioSource.connect(playbackAnalyser);
             currentAudioSource.start();
             isAudioPlaying = true;
-            isProcessing = false; // Allow new audio input after response
 
             currentAudioSource.onended = function() {
                 console.log('Audio playback finished');
                 currentAudioSource = null;
                 isAudioPlaying = false;
                 visualizer.classList.add('idle');
-                statusEl.textContent = 'Listening';
+                isProcessing = false;
+                
+                // Return to listening state
+                if (isRecording && ws && ws.readyState === WebSocket.OPEN) {
+                    updateStatus('Listening', 'Say something...', 'listening');
+                } else {
+                    updateStatus('Disconnected', 'Tap Start to connect', 'disconnected');
+                }
             };
 
             console.log('Playing audio: ' + audioBuffer.duration.toFixed(2) + ' seconds');
@@ -304,7 +285,12 @@ function playIncomingAudio(arrayBuffer) {
             visualizer.classList.add('idle');
             isAudioPlaying = false;
             isProcessing = false;
-            statusEl.textContent = 'Listening';
+            
+            if (isRecording && ws && ws.readyState === WebSocket.OPEN) {
+                updateStatus('Listening', 'Say something...', 'listening');
+            } else {
+                updateStatus('Disconnected', 'Tap Start to connect', 'disconnected');
+            }
         });
 
     } catch (err) {
@@ -312,7 +298,12 @@ function playIncomingAudio(arrayBuffer) {
         visualizer.classList.add('idle');
         isAudioPlaying = false;
         isProcessing = false;
-        statusEl.textContent = 'Listening';
+        
+        if (isRecording && ws && ws.readyState === WebSocket.OPEN) {
+            updateStatus('Listening', 'Say something...', 'listening');
+        } else {
+            updateStatus('Disconnected', 'Tap Start to connect', 'disconnected');
+        }
     }
 }
 
@@ -321,9 +312,7 @@ function stopPlayback() {
         try {
             currentAudioSource.stop();
             currentAudioSource.disconnect();
-        } catch (e) {
-            // Ignore if already stopped
-        }
+        } catch (e) {}
         currentAudioSource = null;
         isAudioPlaying = false;
     }
@@ -348,9 +337,7 @@ function animateVisualizer() {
                 var barHeight = Math.max(8, (value / 255) * 110);
                 bars[i].style.height = barHeight + 'px';
             }
-        } catch (err) {
-            // Silent fail for visualizer errors
-        }
+        } catch (err) {}
     }
     draw();
 }
@@ -359,6 +346,11 @@ function stopSession() {
     console.log('Stopping session...');
     isRecording = false;
     isProcessing = false;
+    isSpeaking = false;
+    audioBuffer = [];
+    silenceFrames = 0;
+
+    updateStatus('Disconnected', 'Tap Start to connect', 'disconnected');
 
     // Stop playback
     stopPlayback();
@@ -372,7 +364,7 @@ function stopSession() {
     // Close WebSocket
     if (ws) {
         try {
-            ws.onclose = null; // Prevent recursive calls
+            ws.onclose = null;
             if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
                 ws.close(1000, 'User stopped session');
             }
@@ -396,15 +388,6 @@ function stopSession() {
         audioProcessor = null;
     }
 
-    // Reset VAD state
-    vadState = {
-        isSpeaking: false,
-        speechStartTime: 0,
-        silenceStartTime: 0,
-        audioBuffer: [],
-        isListening: false
-    };
-
     // Close audio context
     if (audioCtx && audioCtx.state !== 'closed') {
         try {
@@ -414,8 +397,6 @@ function stopSession() {
     }
 
     // Update UI
-    statusEl.textContent = 'Disconnected';
-    statusEl.classList.remove('connected');
     startBtn.disabled = false;
     stopBtn.disabled = true;
     visualizer.classList.add('idle');
@@ -426,7 +407,7 @@ function stopSession() {
 // Keyboard shortcuts
 document.addEventListener('keydown', function(e) {
     if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault(); // Prevent page scroll
+        e.preventDefault();
         if (!startBtn.disabled) {
             startBtn.click();
         } else if (!stopBtn.disabled) {
@@ -435,18 +416,9 @@ document.addEventListener('keydown', function(e) {
     }
 });
 
-// Handle page visibility change (save resources when tab is hidden)
-document.addEventListener('visibilitychange', function() {
-    if (document.hidden && isRecording) {
-        console.log('Tab hidden - reducing resource usage');
-    } else if (!document.hidden && isRecording) {
-        console.log('Tab visible - resuming recording');
-    }
-});
-
-// Handle beforeunload - clean up
+// Clean up on page unload
 window.addEventListener('beforeunload', function() {
     stopSession();
 });
 
-console.log('Voice AI Assistant initialized (clean version)');
+console.log('Voice AI Assistant initialized with status indicators');

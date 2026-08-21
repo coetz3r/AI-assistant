@@ -22,9 +22,10 @@ async def handle_index(request):
 
 
 async def process_audio(audio_file, ws):
+       
     async with processing_lock:
         try:
-            # Transcribe audio to text
+            # Transcribe audio to text (reads from file, no microphone)
             user_text = engine.transcribe(audio_file)
 
             if user_text and user_text.strip():
@@ -34,7 +35,7 @@ async def process_audio(audio_file, ws):
                 reply_text = await engine.generate_response(user_text)
                 print(f"AI replied: {reply_text}")
 
-                # Convert response to speech
+                # Convert response to speech (no microphone)
                 audio_output_path = engine.synthesize_speech(reply_text)
 
                 if audio_output_path and os.path.exists(audio_output_path):
@@ -60,17 +61,16 @@ async def process_audio(audio_file, ws):
 
 
 async def handle_websocket(request):
+
     ws = web.WebSocketResponse()
     await ws.prepare(request)
 
-    print("WebSocket client connected")
-
-    # Accumulate audio data until VAD triggers on client side
-    # Server now receives complete utterances from client
+    print("WebSocket client connected - server microphone is DISABLED")
 
     async for msg in ws:
         if msg.type == WSMsgType.BINARY:
-            # Client sends complete utterances with VAD
+            # Audio data comes from the browser's microphone
+            # Server just processes the received audio file
             with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_wav:
                 temp_input = temp_wav.name
 
@@ -81,7 +81,7 @@ async def handle_websocket(request):
                     wf.setframerate(16000)
                     wf.writeframes(msg.data)
 
-                # Process the audio
+                # Process the audio (no microphone on server)
                 asyncio.create_task(process_audio(temp_input, ws))
 
         elif msg.type == WSMsgType.TEXT:
@@ -123,6 +123,14 @@ app.router.add_get('/api/status', handle_text)
 
 if __name__ == '__main__':
     use_ssl = os.path.exists('cert.pem') and os.path.exists('key.pem')
+
+    # Force no microphone access on server startup
+    # We're not using pyaudio, sounddevice, or any audio input library
+    print("=" * 60)
+    print("SERVER MICROPHONE: DISABLED")
+    print("All audio comes from browser clients via WebSocket")
+    print("Server does NOT have microphone access")
+    print("=" * 60)
 
     if use_ssl:
         print("Running with SSL (HTTPS/WSS)")
