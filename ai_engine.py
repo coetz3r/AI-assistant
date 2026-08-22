@@ -61,6 +61,16 @@ class AIEngine:
         self.last_save_time = datetime.now()
         self.save_interval_seconds = 30
 
+        # 8. Live stats for the monitor dashboard (read-only from outside)
+        self.stats = {
+            "total_requests": 0,
+            "local_count": 0,
+            "cloud_count": 0,
+            "last_backend": None,       # "local" | "groq"
+            "last_latency_ms": None,
+            "avg_latency_ms": None,
+        }
+
     def load_memory(self):
         default_memory = {
             "facts": [],
@@ -178,7 +188,7 @@ class AIEngine:
             stream = self.llm.create_chat_completion(
                 messages=messages,
                 max_tokens=256,
-                temperature=0.7,
+                temperature=0.5,
                 top_p=0.9,
                 frequency_penalty=0.1,
                 presence_penalty=0.1,
@@ -208,12 +218,16 @@ class AIEngine:
         )
 
         reply = ""
+        backend_used = None
+        turn_start = datetime.now()
 
         if not is_heavy_task:
             loop = asyncio.get_event_loop()
             reply = await loop.run_in_executor(
                 None, self._run_local_llm_streaming, self.history, stop_flag
             )
+            if reply:
+                backend_used = "local"
 
         if stop_flag.is_set():
             # interrupt & Groq history logging
@@ -230,15 +244,32 @@ class AIEngine:
                     temperature=0.7
                 )
                 reply = groq_response.choices[0].message.content.strip()
+                backend_used = "groq"
             except Exception as e:
                 print(f"Groq assist call failed: {e}")
                 reply = "I had trouble processing that locally and couldn't reach the assistant model."
+                backend_used = "groq_failed"
 
         if stop_flag.is_set():
             self.history.pop()
             return ""
 
         self.history.append({"role": "assistant", "content": reply})
+
+        # Update live stats for the monitor dashboard
+        latency_ms = (datetime.now() - turn_start).total_seconds() * 1000
+        self.stats["total_requests"] += 1
+        if backend_used == "local":
+            self.stats["local_count"] += 1
+        elif backend_used in ("groq", "groq_failed"):
+            self.stats["cloud_count"] += 1
+        self.stats["last_backend"] = backend_used
+        self.stats["last_latency_ms"] = round(latency_ms, 1)
+        prev_avg = self.stats["avg_latency_ms"]
+        n = self.stats["total_requests"]
+        self.stats["avg_latency_ms"] = round(
+            latency_ms if prev_avg is None else (prev_avg * (n - 1) + latency_ms) / n, 1
+        )
 
         if self.use_external_api:
             # Groq bg memory task

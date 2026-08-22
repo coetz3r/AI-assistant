@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LUNA — System Telemetry</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/monitor.css">
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-eyebrow">LUNA</span>
+      <span class="brand-title">System Telemetry</span>
+    </div>
+    <div class="conn-status" id="connStatus">
+      <span class="conn-dot" id="connDot"></span>
+      <span id="connLabel">connecting…</span>
+      <span class="conn-time" id="connTime"></span>
+    </div>
+  </header>
+
+  <main class="grid">
+
+    <!-- CPU -->
+    <section class="panel" id="panel-cpu">
+      <div class="panel-head">
+        <span class="panel-label">CPU</span>
+        <span class="panel-sub" id="cpuFreq">—</span>
+      </div>
+      <div class="panel-body panel-body--dial">
+        <div class="dial" id="cpuDial">
+          <div class="dial-value" id="cpuValue">--<span class="unit">%</span></div>
+        </div>
+        <div class="cores" id="cpuCores"></div>
+      </div>
+      <div class="panel-foot" id="cpuLoad">load avg —</div>
+    </section>
+
+    <!-- MEMORY -->
+    <section class="panel" id="panel-mem">
+      <div class="panel-head">
+        <span class="panel-label">Memory</span>
+        <span class="panel-sub" id="memTotal">—</span>
+      </div>
+      <div class="panel-body panel-body--dial">
+        <div class="dial" id="memDial">
+          <div class="dial-value" id="memValue">--<span class="unit">%</span></div>
+        </div>
+        <div class="bar-stack">
+          <div class="bar-row">
+            <span class="bar-label">RAM</span>
+            <div class="bar-track"><div class="bar-fill" id="ramBarFill"></div></div>
+            <span class="bar-num" id="ramBarNum">—</span>
+          </div>
+          <div class="bar-row">
+            <span class="bar-label">Swap</span>
+            <div class="bar-track"><div class="bar-fill bar-fill--warn" id="swapBarFill"></div></div>
+            <span class="bar-num" id="swapBarNum">—</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- GPU -->
+    <section class="panel" id="panel-gpu">
+      <div class="panel-head">
+        <span class="panel-label">GPU</span>
+        <span class="panel-sub" id="gpuTemp">—</span>
+      </div>
+      <div class="panel-body panel-body--dial" id="gpuBody">
+        <div class="dial" id="gpuDial">
+          <div class="dial-value" id="gpuValue">--<span class="unit">%</span></div>
+        </div>
+      </div>
+      <div class="panel-foot panel-foot--note" id="gpuNote"></div>
+    </section>
+
+    <!-- NETWORK -->
+    <section class="panel panel--wide" id="panel-net">
+      <div class="panel-head">
+        <span class="panel-label">Network</span>
+        <span class="panel-sub" id="wifiSignal">—</span>
+      </div>
+      <div class="panel-body panel-body--spark">
+        <canvas id="netSpark" width="600" height="90"></canvas>
+        <div class="spark-readout">
+          <div><span class="ro-dot ro-dot--up"></span>up <span id="netUp">—</span></div>
+          <div><span class="ro-dot ro-dot--down"></span>down <span id="netDown">—</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- AI ENGINE -->
+    <section class="panel panel--wide" id="panel-engine">
+      <div class="panel-head">
+        <span class="panel-label">AI Engine</span>
+        <span class="panel-sub" id="engineActive">0 active</span>
+      </div>
+      <div class="panel-body panel-body--engine">
+        <div class="engine-stats">
+          <div class="stat">
+            <span class="stat-num" id="engTotal">0</span>
+            <span class="stat-label">turns</span>
+          </div>
+          <div class="stat">
+            <span class="stat-num" id="engLatency">—</span>
+            <span class="stat-label">last latency</span>
+          </div>
+          <div class="stat">
+            <span class="stat-num" id="engAvgLatency">—</span>
+            <span class="stat-label">avg latency</span>
+          </div>
+          <div class="stat">
+            <span class="stat-num backend-badge" id="engBackend">—</span>
+            <span class="stat-label">last backend</span>
+          </div>
+        </div>
+        <div class="split-bar-wrap">
+          <div class="split-bar">
+            <div class="split-bar-local" id="splitLocal"></div>
+            <div class="split-bar-cloud" id="splitCloud"></div>
+          </div>
+          <div class="split-legend">
+            <span><span class="ro-dot ro-dot--local"></span>local <span id="splitLocalNum">0</span></span>
+            <span><span class="ro-dot ro-dot--cloud"></span>cloud <span id="splitCloudNum">0</span></span>
+          </div>
+        </div>
+        <canvas id="latSpark" width="600" height="60"></canvas>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="/static/monitor.js"></script>
+</body>
+</html>

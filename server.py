@@ -7,8 +7,14 @@ import tempfile
 import threading
 from aiohttp import web, WSMsgType
 from ai_engine import AIEngine
+from system_stats import SystemStats
 
 engine = AIEngine()
+stats_collector = SystemStats()
+
+# Voice websocket connections currently open (for the monitor dashboard —
+# separate from monitor sockets themselves, which don't count as "active").
+active_voice_connections = set()
 
 app = web.Application()
 app.router.add_static('/static', path='static', name='static')
@@ -98,6 +104,7 @@ async def handle_websocket(request):
     await ws.prepare(request)
 
     print("WebSocket client connected")
+    active_voice_connections.add(ws)
     client_sample_rate = 16000
 
     # Per-connection state: which turn is "live", the task processing it,
@@ -172,8 +179,37 @@ async def handle_websocket(request):
 
     # Clean up any turn still running when the client disconnects
     _interrupt_active_turn(conn_state)
+    active_voice_connections.discard(ws)
 
     print("WebSocket client disconnected")
+    return ws
+
+
+async def handle_monitor_page(request):
+    return web.FileResponse('./static/monitor.html')
+
+
+async def handle_monitor_ws(request):
+    """Pushes a JSON telemetry snapshot once a second to the monitor UI."""
+    ws = web.WebSocketResponse()
+    await ws.prepare(request)
+    print("Monitor client connected")
+
+    try:
+        while True:
+            snapshot = stats_collector.collect_all(
+                engine_stats=engine.stats,
+                active_connections=len(active_voice_connections),
+            )
+            await ws.send_str(json.dumps(snapshot))
+            await asyncio.sleep(1.0)
+    except (asyncio.CancelledError, ConnectionResetError):
+        pass
+    except Exception as e:
+        print(f"Monitor feed error: {e}")
+    finally:
+        print("Monitor client disconnected")
+
     return ws
 
 
@@ -188,6 +224,8 @@ async def handle_text(request):
 app.router.add_get('/', handle_index)
 app.router.add_get('/ws', handle_websocket)
 app.router.add_get('/api/status', handle_text)
+app.router.add_get('/monitor', handle_monitor_page)
+app.router.add_get('/ws/monitor', handle_monitor_ws)
 
 
 if __name__ == '__main__':
