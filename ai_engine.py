@@ -132,7 +132,7 @@ class AIEngine:
 
         try:
             response = await self.groq_client.chat.completions.create(
-                model="llama-3.3-70b-versatile", #llama-3.3-70b-versatile
+                model="openai/gpt-oss-20b", #llama-3.3-70b-versatile
                 messages=[{"role": "user", "content": extraction_prompt}],
                 response_format={"type": "json_object"},
                 temperature=0.1
