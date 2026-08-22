@@ -4,67 +4,96 @@ import asyncio
 import ssl
 import wave
 import tempfile
+import threading
 from aiohttp import web, WSMsgType
-from ai_engine import VoiceAIEngine
+from ai_engine import AIEngine
 
-engine = VoiceAIEngine()
+engine = AIEngine()
 
 app = web.Application()
 app.router.add_static('/static', path='static', name='static')
 
-processing_lock = asyncio.Lock()
 
+async def process_audio(audio_file, ws, turn_id, stop_flag, conn_state):
+    """Handles one utterance end-to-end. Bails out early (without sending
+    anything) if a newer turn has superseded this one — either because the
+    user was interrupted-and-replaced by a fresh turn_start, or because an
+    explicit interrupt message came in."""
+    try:
+        def is_stale():
+            return conn_state["turn_id"] != turn_id
 
-async def handle_index(request):
-    return web.FileResponse('./index.html')
+        # Transcribe audio file
+        user_text = engine.transcribe(audio_file)
 
+        if is_stale():
+            return
 
-async def process_audio(audio_file, ws):
-    async with processing_lock:
+        # Noise and hallucination filter
+        cleaned_text = user_text.strip().lower() if user_text else ""
+        ignored_phrases = ["", "[blank_audio]", "you", "thank you.", "thank you", "bye.", "bye"]
+
+        if not cleaned_text or len(cleaned_text) < 2 or cleaned_text in ignored_phrases:
+            print("Ignored background noise or empty transcription.")
+            await ws.send_str(json.dumps({"type": "no_speech"}))
+            return
+
+        print(f"User said: {user_text}")
+
+        # Generate response — checks stop_flag between tokens so an
+        # interrupt part-way through halts generation almost immediately
+        reply_text = await engine.generate_response(user_text, stop_flag=stop_flag)
+
+        if is_stale() or stop_flag.is_set() or not reply_text:
+            return
+
+        print(f"AI replied: {reply_text}")
+
+        # Synthesize TTS
+        audio_output_path = engine.synthesize_speech(reply_text)
+
+        if is_stale() or stop_flag.is_set():
+            return
+
+        if audio_output_path and os.path.exists(audio_output_path):
+            with open(audio_output_path, "rb") as f:
+                audio_data = f.read()
+            # Tag the response with its turn id right before the bytes so
+            # the client can drop it if it's since moved on to a new turn
+            await ws.send_str(json.dumps({"type": "response_turn", "turnId": turn_id}))
+            await ws.send_bytes(audio_data)
+            print(f"Audio response sent ({len(audio_data)} bytes)")
+        else:
+            print("Failed to generate audio response")
+            await ws.send_str(json.dumps({"type": "error", "message": "Couldn't generate a reply, try again."}))
+
+    except asyncio.CancelledError:
+        print(f"Turn {turn_id} cancelled (interrupted)")
+        raise
+    except Exception as e:
+        print(f"Error processing audio: {e}")
         try:
-            # Transcribe audio file
-            user_text = engine.transcribe(audio_file)
-
-            # Noise and hallucination filter
-            cleaned_text = user_text.strip().lower() if user_text else ""
-            ignored_phrases = ["", "[blank_audio]", "you", "thank you.", "thank you", "bye.", "bye"]
-            
-            if not cleaned_text or len(cleaned_text) < 2 or cleaned_text in ignored_phrases:
-                print("Ignored background noise or empty transcription.")
-                await ws.send_str(json.dumps({"type": "no_speech"}))
-                return
-
-            print(f"User said: {user_text}")
-
-            # Generate response asynchronously
-            reply_text = await engine.generate_response(user_text)
-            print(f"AI replied: {reply_text}")
-
-            # Synthesize TTS
-            audio_output_path = engine.synthesize_speech(reply_text)
-
-            if audio_output_path and os.path.exists(audio_output_path):
-                with open(audio_output_path, "rb") as f:
-                    audio_data = f.read()
-                    await ws.send_bytes(audio_data)
-                print(f"Audio response sent ({len(audio_data)} bytes)")
-            else:
-                print("Failed to generate audio response")
-                await ws.send_str(json.dumps({"type": "error", "message": "Couldn't generate a reply, try again."}))
-
-        except Exception as e:
-            print(f"Error processing audio: {e}")
+            await ws.send_str(json.dumps({"type": "error", "message": "Something went wrong processing that."}))
+        except Exception:
+            pass
+    finally:
+        if os.path.exists(audio_file):
             try:
-                await ws.send_str(json.dumps({"type": "error", "message": "Something went wrong processing that."}))
+                os.remove(audio_file)
+                print(f"Cleaned up: {audio_file}")
             except Exception:
                 pass
-        finally:
-            if os.path.exists(audio_file):
-                try:
-                    os.remove(audio_file)
-                    print(f"Cleaned up: {audio_file}")
-                except Exception:
-                    pass
+
+
+def _interrupt_active_turn(conn_state):
+    """Cancels whatever's currently in flight for this connection and marks
+    it stale so a late-finishing thread can't sneak a response through."""
+    conn_state["turn_id"] = -1
+    if conn_state["stop_flag"] is not None:
+        conn_state["stop_flag"].set()
+    active_task = conn_state["active_task"]
+    if active_task and not active_task.done():
+        active_task.cancel()
 
 
 async def handle_websocket(request):
@@ -74,8 +103,16 @@ async def handle_websocket(request):
     print("WebSocket client connected")
     client_sample_rate = 16000
 
+    # Per-connection state: which turn is "live", the task processing it,
+    # and the flag that tells its background LLM thread to stop early.
+    conn_state = {"turn_id": 0, "active_task": None, "stop_flag": None}
+
     async for msg in ws:
         if msg.type == WSMsgType.BINARY:
+            turn_id = conn_state["turn_id"]
+            stop_flag = threading.Event()
+            conn_state["stop_flag"] = stop_flag
+
             with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_wav:
                 temp_input = temp_wav.name
 
@@ -85,7 +122,13 @@ async def handle_websocket(request):
                     wf.setframerate(client_sample_rate)
                     wf.writeframes(msg.data)
 
-                asyncio.create_task(process_audio(temp_input, ws))
+                # A new turn always supersedes whatever was still running
+                if conn_state["active_task"] and not conn_state["active_task"].done():
+                    conn_state["active_task"].cancel()
+
+                conn_state["active_task"] = asyncio.create_task(
+                    process_audio(temp_input, ws, turn_id, stop_flag, conn_state)
+                )
 
         elif msg.type == WSMsgType.TEXT:
             try:
@@ -98,30 +141,47 @@ async def handle_websocket(request):
                         print(f"Client reported sample rate: {client_sample_rate} Hz")
                     continue
 
+                if data.get("type") == "turn_start":
+                    turn_id = data.get("turnId")
+                    if isinstance(turn_id, (int, float)):
+                        conn_state["turn_id"] = turn_id
+                    continue
+
+                if data.get("type") == "interrupt":
+                    print("Interrupt received — cancelling current turn")
+                    _interrupt_active_turn(conn_state)
+                    continue
+
                 if data.get("type") == "text_query":
                     user_text = data.get("text", "").strip()
                     if user_text:
                         print(f"Text query: {user_text}")
-                        async with processing_lock:
-                            reply_text = await engine.generate_response(user_text)
-                            print(f"AI replied: {reply_text}")
+                        reply_text = await engine.generate_response(user_text)
+                        print(f"AI replied: {reply_text}")
 
-                            audio_output_path = engine.synthesize_speech(reply_text)
+                        audio_output_path = engine.synthesize_speech(reply_text)
 
-                            if audio_output_path and os.path.exists(audio_output_path):
-                                with open(audio_output_path, "rb") as f:
-                                    await ws.send_bytes(f.read())
-                                print("Audio response sent")
-                            else:
-                                await ws.send_str(json.dumps({"type": "error", "message": "Couldn't generate a reply, try again."}))
+                        if audio_output_path and os.path.exists(audio_output_path):
+                            with open(audio_output_path, "rb") as f:
+                                await ws.send_bytes(f.read())
+                            print("Audio response sent")
+                        else:
+                            await ws.send_str(json.dumps({"type": "error", "message": "Couldn't generate a reply, try again."}))
             except json.JSONDecodeError:
                 print("Invalid JSON received")
 
         elif msg.type == WSMsgType.ERROR:
             print(f"WebSocket error: {ws.exception()}")
 
+    # Clean up any turn still running when the client disconnects
+    _interrupt_active_turn(conn_state)
+
     print("WebSocket client disconnected")
     return ws
+
+
+async def handle_index(request):
+    return web.FileResponse('./index.html')
 
 
 async def handle_text(request):

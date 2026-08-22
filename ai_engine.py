@@ -3,6 +3,7 @@ import wave
 import asyncio
 import json
 import multiprocessing
+import threading
 from datetime import datetime
 from llama_cpp import Llama
 from faster_whisper import WhisperModel
@@ -14,7 +15,7 @@ from groq import AsyncGroq
 load_dotenv()
 
 
-class VoiceAIEngine:
+class AIEngine:
     def __init__(
         self,
         llm_model_path="models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
@@ -102,9 +103,14 @@ class VoiceAIEngine:
 
     def _build_conversation_history(self):
         system_content = (
-            "You are a concise, helpful voice assistant. "
-            "Keep answers brief and conversational. "
-            "Use recalled context naturally to personalize responses."
+            "You are a direct, concise voice assistant.\n"
+            "- Answer the user's question directly in 1 to 3 short sentences.\n"
+            "- NEVER end responses with conversational filler like 'Goodbye', "
+            "'Have a nice day', or 'Is there anything else?'.\n"
+            "- NEVER explain what you are or list your capabilities unless explicitly asked.\n"
+            "- Speak naturally and casually, as if talking on a phone call.\n"
+            "- Use recalled context naturally to personalize responses, without "
+            "announcing that you're recalling it."
         )
         facts = self.long_term_memory.get("facts", [])[-20:]
         if facts:
@@ -143,16 +149,55 @@ class VoiceAIEngine:
             print(f"Autonomous memory extraction error: {e}")
             return []
 
-    def transcribe(self, audio_file_path):
+    def transcribe(self, audio_file_path, no_speech_threshold=0.6, min_avg_logprob=-1.0):
         segments, _ = self.stt.transcribe(
             audio_file_path,
             beam_size=1,
             best_of=1,
-            vad_filter=True
+            vad_filter=True,
+            vad_parameters=dict(min_silence_duration_ms=500)
         )
-        return "".join(segment.text for segment in segments).strip()
 
-    async def generate_response(self, user_text):
+        kept_text = []
+        for segment in segments:
+            # Whisper's own estimate that this chunk was silence/noise, not speech
+            if segment.no_speech_prob > no_speech_threshold:
+                continue
+            # Low-confidence segments are frequently hallucinated words from
+            # background noise rather than real speech
+            if segment.avg_logprob < min_avg_logprob:
+                continue
+            kept_text.append(segment.text)
+
+        return "".join(kept_text).strip()
+
+    def _run_local_llm_streaming(self, messages, stop_flag):
+        # interrupt system
+        text_parts = []
+        try:
+            stream = self.llm.create_chat_completion(
+                messages=messages,
+                max_tokens=256,
+                temperature=0.7,
+                top_p=0.9,
+                frequency_penalty=0.1,
+                presence_penalty=0.1,
+                stream=True
+            )
+            for chunk in stream:
+                if stop_flag.is_set():
+                    break
+                delta = chunk["choices"][0]["delta"].get("content", "")
+                if delta:
+                    text_parts.append(delta)
+        except Exception as e:
+            print(f"Local LLM execution failed: {e}")
+        return "".join(text_parts).strip()
+
+    async def generate_response(self, user_text, stop_flag=None):
+        if stop_flag is None:
+            stop_flag = threading.Event()
+
         self.history.append({"role": "user", "content": user_text})
         
         if len(self.history) > self.max_history_turns * 2 + 1:
@@ -165,23 +210,15 @@ class VoiceAIEngine:
         reply = ""
 
         if not is_heavy_task:
-            try:
-                loop = asyncio.get_event_loop()
-                response = await loop.run_in_executor(
-                    None,
-                    lambda: self.llm.create_chat_completion(
-                        messages=self.history,
-                        max_tokens=256,
-                        temperature=0.7,
-                        top_p=0.9,
-                        frequency_penalty=0.1,
-                        presence_penalty=0.1
-                    )
-                )
-                reply = response["choices"][0]["message"]["content"].strip()
-            except Exception as e:
-                print(f"Local LLM execution failed: {e}")
-                reply = ""
+            loop = asyncio.get_event_loop()
+            reply = await loop.run_in_executor(
+                None, self._run_local_llm_streaming, self.history, stop_flag
+            )
+
+        if stop_flag.is_set():
+            # interrupt & Groq history logging
+            self.history.pop()
+            return ""
 
         if not reply and self.use_external_api:
             print("Offloading request to Groq for assistance...")
@@ -197,9 +234,20 @@ class VoiceAIEngine:
                 print(f"Groq assist call failed: {e}")
                 reply = "I had trouble processing that locally and couldn't reach the assistant model."
 
+        if stop_flag.is_set():
+            self.history.pop()
+            return ""
+
         self.history.append({"role": "assistant", "content": reply})
-        
+
         if self.use_external_api:
+            # Groq bg memory task
+            asyncio.create_task(self._update_memory_background(user_text, reply))
+
+        return reply
+
+    async def _update_memory_background(self, user_text, reply):
+        try:
             new_facts = await self.extract_memory_autonomous(user_text, reply)
             if new_facts:
                 self.long_term_memory["facts"].extend(new_facts)
@@ -213,8 +261,8 @@ class VoiceAIEngine:
                 self.save_memory()
             elif (datetime.now() - self.last_save_time).seconds > self.save_interval_seconds:
                 self.save_memory()
-        
-        return reply
+        except Exception as e:
+            print(f"Background memory update failed: {e}")
 
     def synthesize_speech(self, text, output_path="static/output.wav"):
         os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)

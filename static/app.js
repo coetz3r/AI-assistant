@@ -21,9 +21,20 @@ let audioBuffer = [];
 let isSpeaking = false;
 let silenceFrames = 0;
 
-const MAX_SILENCE_FRAMES = 20;
+const MAX_SILENCE_FRAMES = 7;      // ~900ms of trailing silence (was ~2.56s)
 const MIN_SPEECH_FRAMES = 10;
-const RMS_THRESHOLD = 0.035;
+const MIN_RMS_THRESHOLD = 0.018;   // floor so a silent room doesn't trigger on a whisper of noise
+const NOISE_FLOOR_MULTIPLIER = 3;  // speech must exceed ambient noise by this factor
+let noiseFloor = 0.01;             // running estimate of ambient noise, updated while not speaking
+
+// Barge-in: interrupting the AI mid-reply
+const BARGE_IN_RMS_MULTIPLIER = 4.5;  // stricter than normal speech threshold — avoid tripping on residual TTS bleed through the mic
+const BARGE_IN_CONFIRM_FRAMES = 4;    // ~512ms of sustained loud speech before we trust it as a real interruption
+let bargeInFrames = 0;
+
+// Turn tracking so a stale reply (superseded by a barge-in) never gets played
+let turnId = 0;
+let pendingResponseTurnId = null;
 
 // Event Listeners
 startBtn.addEventListener('click', startVoiceSession);
@@ -87,6 +98,9 @@ async function startVoiceSession() {
             isSpeaking = false;
             audioBuffer = [];
             silenceFrames = 0;
+            turnId = 0;
+            pendingResponseTurnId = null;
+            bargeInFrames = 0;
 
             ws.send(JSON.stringify({ type: 'init', sampleRate: audioCtx.sampleRate }));
             setupMicStreaming();
@@ -95,12 +109,29 @@ async function startVoiceSession() {
         ws.onmessage = function(event) {
             if (event.data instanceof ArrayBuffer) {
                 isProcessing = false;
+
+                // If a newer turn has started since this response was requested
+                // (i.e. the user interrupted), the response is stale — drop it.
+                if (pendingResponseTurnId !== null && pendingResponseTurnId !== turnId) {
+                    console.log('Discarding stale response for turn', pendingResponseTurnId);
+                    pendingResponseTurnId = null;
+                    return;
+                }
+                pendingResponseTurnId = null;
                 playIncomingAudio(event.data);
                 return;
             }
 
             try {
                 var data = JSON.parse(event.data);
+
+                if (data.type === 'response_turn') {
+                    // Meta message that always precedes the binary payload
+                    // for this turn — just remember which turn it's for.
+                    pendingResponseTurnId = data.turnId;
+                    return;
+                }
+
                 isProcessing = false;
 
                 if (data.type === 'no_speech') {
@@ -146,7 +177,33 @@ function setupMicStreaming() {
     var dataArray = new Uint8Array(micAnalyser.frequencyBinCount);
 
     audioProcessor.onaudioprocess = function(e) {
-        if (!ws || ws.readyState !== WebSocket.OPEN || !isRecording || isProcessing || isAudioPlaying) {
+        if (!ws || ws.readyState !== WebSocket.OPEN || !isRecording) {
+            return;
+        }
+
+        var inputData = e.inputBuffer.getChannelData(0);
+        var sum = 0;
+        for (var i = 0; i < inputData.length; i++) {
+            sum += inputData[i] * inputData[i];
+        }
+        var rms = Math.sqrt(sum / inputData.length);
+
+        if (isAudioPlaying) {
+            // The AI is talking — only listen for a loud, sustained
+            // interruption. Playback visualizer handles the bars here.
+            var bargeThreshold = Math.max(MIN_RMS_THRESHOLD, noiseFloor * NOISE_FLOOR_MULTIPLIER) * BARGE_IN_RMS_MULTIPLIER;
+            if (rms > bargeThreshold) {
+                bargeInFrames++;
+                if (bargeInFrames >= BARGE_IN_CONFIRM_FRAMES) {
+                    handleBargeIn();
+                }
+            } else {
+                bargeInFrames = 0;
+            }
+            return;
+        }
+
+        if (isProcessing) {
             return;
         }
 
@@ -158,12 +215,7 @@ function setupMicStreaming() {
             bars[i].style.height = barHeight + 'px';
         }
 
-        var inputData = e.inputBuffer.getChannelData(0);
-        var sum = 0;
-        for (var i = 0; i < inputData.length; i++) {
-            sum += inputData[i] * inputData[i];
-        }
-        var rms = Math.sqrt(sum / inputData.length);
+        var effectiveThreshold = Math.max(MIN_RMS_THRESHOLD, noiseFloor * NOISE_FLOOR_MULTIPLIER);
 
         var pcm16 = new Int16Array(inputData.length);
         for (var j = 0; j < inputData.length; j++) {
@@ -171,7 +223,7 @@ function setupMicStreaming() {
             pcm16[j] = sample * 0x7FFF;
         }
 
-        if (rms > RMS_THRESHOLD) {
+        if (rms > effectiveThreshold) {
             if (!isSpeaking) {
                 isSpeaking = true;
                 updateStatus('Listening', 'Recording...', 'listening');
@@ -189,6 +241,10 @@ function setupMicStreaming() {
                 isSpeaking = false;
                 silenceFrames = 0;
             }
+        } else {
+            // Not speaking: slowly track ambient noise so the threshold
+            // adapts to the room instead of staying fixed.
+            noiseFloor = noiseFloor * 0.95 + rms * 0.05;
         }
     };
 
@@ -196,11 +252,34 @@ function setupMicStreaming() {
     audioProcessor.connect(audioCtx.destination);
 }
 
+function handleBargeIn() {
+    console.log('Barge-in detected — interrupting AI');
+    bargeInFrames = 0;
+
+    stopPlayback();
+    isAudioPlaying = false;
+    isProcessing = false;
+    pendingResponseTurnId = null;
+
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        try { ws.send(JSON.stringify({ type: 'interrupt' })); } catch (e) {}
+    }
+
+    isSpeaking = false;
+    silenceFrames = 0;
+    audioBuffer = [];
+
+    updateStatus('Listening', 'Go ahead...', 'listening');
+}
+
 function sendAudioBuffer(buffers) {
     if (!ws || ws.readyState !== WebSocket.OPEN || isProcessing) return;
     
     try {
         isProcessing = true;
+        turnId++;
+        ws.send(JSON.stringify({ type: 'turn_start', turnId: turnId }));
+
         var totalLength = 0;
         for (var i = 0; i < buffers.length; i++) {
             totalLength += buffers[i].length;
@@ -324,6 +403,8 @@ function stopSession() {
     isSpeaking = false;
     audioBuffer = [];
     silenceFrames = 0;
+    pendingResponseTurnId = null;
+    bargeInFrames = 0;
 
     updateStatus('Disconnected', 'Tap Start to connect', 'disconnected');
 
