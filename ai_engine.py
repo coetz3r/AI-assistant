@@ -132,7 +132,7 @@ class AIEngine:
 
         try:
             response = await self.groq_client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model="llama-3.3-70b-versatile", #llama-3.3-70b-versatile
                 messages=[{"role": "user", "content": extraction_prompt}],
                 response_format={"type": "json_object"},
                 temperature=0.1
@@ -224,7 +224,7 @@ class AIEngine:
             print("Offloading request to Groq for assistance...")
             try:
                 groq_response = await self.groq_client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
+                    model="openai/gpt-oss-20b",
                     messages=self.history,
                     max_tokens=256,
                     temperature=0.7

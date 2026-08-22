@@ -15,10 +15,7 @@ app.router.add_static('/static', path='static', name='static')
 
 
 async def process_audio(audio_file, ws, turn_id, stop_flag, conn_state):
-    """Handles one utterance end-to-end. Bails out early (without sending
-    anything) if a newer turn has superseded this one — either because the
-    user was interrupted-and-replaced by a fresh turn_start, or because an
-    explicit interrupt message came in."""
+
     try:
         def is_stale():
             return conn_state["turn_id"] != turn_id
