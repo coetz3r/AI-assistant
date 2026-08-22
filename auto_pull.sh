@@ -2,10 +2,9 @@
 set -e
 cd "$(dirname "$0")"
 
-git fetch origin main
-LOCAL=$(git rev-parse HEAD)
-REMOTE=$(git rev-parse origin/main)
+# Configure local git to avoid auto-fetching unnecessary tags
+git config fetch.unpackLimit 1
 
-if [ "$LOCAL" != "$REMOTE" ]; then
-    git pull origin main
-fi
+# Pull fast-forward changes directly in a single network pass
+git pull --ff-only --no-tags --depth=1 origin main
+
