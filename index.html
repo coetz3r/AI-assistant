@@ -4,42 +4,46 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Voice AI Assistant</title>
-    <link rel="stylesheet" href="static/style.css">
-    <script src="static/app.js" defer></script>
+    
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="/static/app.js" defer></script>
 
     <!-- Home Screen App Icons -->
-    <link rel="icon" type="image/png" sizes="192x192" href="static/icon-192.png">
-    <link rel="apple-touch-icon" href="static/icon-192.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png">
+    <link rel="apple-touch-icon" href="/static/icon-192.png">
 
-    <!-- Make it Open as a Fullscreen Standalone App -->
+    <!-- Standalone Fullscreen App Meta -->
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="theme-color" content="#667eea">
+    <meta name="theme-color" content="#0b0f19">
 </head>
 <body>
 
-    <div class="container">
-        <h1>Voice AI</h1>
-        
-        <div id="status" class="status-badge">Disconnected</div>
+  <div class="container">
+    <h1>Voice AI</h1>
 
-        <!-- Animated Equalizer Bars -->
-        <div id="visualizer" class="visualizer idle">
-            <div class="bar"></div>
-            <div class="bar"></div>
-            <div class="bar"></div>
-            <div class="bar"></div>
-            <div class="bar"></div>
-            <div class="bar"></div>
-            <div class="bar"></div>
-        </div>
-
-        <div class="controls">
-            <button id="startBtn" class="btn-primary">Start Voice</button>
-            <button id="stopBtn" class="btn-danger" disabled>Stop</button>
-        </div>
+    <div id="status-badge" class="status-badge">
+      <span class="dot"></span>
+      <span id="status">Disconnected</span>
     </div>
+    <div id="status-sub" class="status-sub">Tap Start to connect</div>
+
+    <div id="visualizer" class="visualizer-card">
+      <div class="bar"></div>
+      <div class="bar"></div>
+      <div class="bar"></div>
+      <div class="bar"></div>
+      <div class="bar"></div>
+      <div class="bar"></div>
+      <div class="bar"></div>
+    </div>
+
+    <div class="controls">
+      <button id="startBtn">Start Voice</button>
+      <button id="stopBtn" disabled>Stop</button>
+    </div>
+  </div>
 
 </body>
 </html>

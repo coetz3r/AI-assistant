@@ -1,7 +1,8 @@
 // DOM Elements
 const statusEl = document.getElementById('status');
 const statusSubEl = document.getElementById('status-sub');
-const visualizer = document.getElementById('visualizer');
+const visualizerCard = document.getElementById('visualizer');
+const badgeEl = document.getElementById('status-badge');
 const bars = document.querySelectorAll('.bar');
 const startBtn = document.getElementById('startBtn');
 const stopBtn = document.getElementById('stopBtn');
@@ -19,6 +20,7 @@ let isProcessing = false;
 let audioBuffer = [];
 let isSpeaking = false;
 let silenceFrames = 0;
+
 const MAX_SILENCE_FRAMES = 20;
 const MIN_SPEECH_FRAMES = 10;
 const RMS_THRESHOLD = 0.035;
@@ -28,15 +30,19 @@ startBtn.addEventListener('click', startVoiceSession);
 stopBtn.addEventListener('click', stopSession);
 
 function updateStatus(mainStatus, subStatus, className) {
-    if (statusEl) {
-        statusEl.textContent = mainStatus;
-        statusEl.classList.remove('listening', 'thinking', 'talking', 'connected', 'disconnected');
-        if (className) {
-            statusEl.classList.add(className);
-        }
+    if (statusEl) statusEl.textContent = mainStatus;
+    if (statusSubEl) statusSubEl.textContent = subStatus || '';
+
+    if (badgeEl) {
+        badgeEl.className = 'status-badge';
+        if (className) badgeEl.classList.add(className);
     }
-    if (statusSubEl) {
-        statusSubEl.textContent = subStatus || '';
+
+    if (visualizerCard) {
+        visualizerCard.className = 'visualizer-card';
+        if (className && (className === 'listening' || className === 'talking')) {
+            visualizerCard.classList.add(className);
+        }
     }
 }
 
@@ -133,46 +139,56 @@ function setupMicStreaming() {
     var source = audioCtx.createMediaStreamSource(micStream);
     audioProcessor = audioCtx.createScriptProcessor(2048, 1, 1);
 
+    var micAnalyser = audioCtx.createAnalyser();
+    micAnalyser.fftSize = 32;
+    source.connect(micAnalyser);
+
+    var dataArray = new Uint8Array(micAnalyser.frequencyBinCount);
+
     audioProcessor.onaudioprocess = function(e) {
         if (!ws || ws.readyState !== WebSocket.OPEN || !isRecording || isProcessing || isAudioPlaying) {
             return;
         }
 
-        try {
-            var inputData = e.inputBuffer.getChannelData(0);
-            var sum = 0;
-            for (var i = 0; i < inputData.length; i++) {
-                sum += inputData[i] * inputData[i];
-            }
-            var rms = Math.sqrt(sum / inputData.length);
+        // Live mic visualizer drive
+        micAnalyser.getByteFrequencyData(dataArray);
+        for (var i = 0; i < bars.length; i++) {
+            var value = dataArray[i] || 0;
+            var barHeight = Math.max(8, (value / 255) * 110);
+            bars[i].style.height = barHeight + 'px';
+        }
 
-            var pcm16 = new Int16Array(inputData.length);
-            for (var j = 0; j < inputData.length; j++) {
-                var sample = Math.max(-1, Math.min(1, inputData[j]));
-                pcm16[j] = sample * 0x7FFF;
-            }
+        var inputData = e.inputBuffer.getChannelData(0);
+        var sum = 0;
+        for (var i = 0; i < inputData.length; i++) {
+            sum += inputData[i] * inputData[i];
+        }
+        var rms = Math.sqrt(sum / inputData.length);
 
-            if (rms > RMS_THRESHOLD) {
-                if (!isSpeaking) {
-                    isSpeaking = true;
-                    updateStatus('Listening...', 'Recording speech...', 'listening');
-                }
+        var pcm16 = new Int16Array(inputData.length);
+        for (var j = 0; j < inputData.length; j++) {
+            var sample = Math.max(-1, Math.min(1, inputData[j]));
+            pcm16[j] = sample * 0x7FFF;
+        }
+
+        if (rms > RMS_THRESHOLD) {
+            if (!isSpeaking) {
+                isSpeaking = true;
+                updateStatus('Listening', 'Recording...', 'listening');
+            }
+            silenceFrames = 0;
+            audioBuffer.push(pcm16);
+        } else if (isSpeaking) {
+            silenceFrames++;
+            audioBuffer.push(pcm16);
+            
+            if (silenceFrames > MAX_SILENCE_FRAMES && audioBuffer.length > MIN_SPEECH_FRAMES) {
+                updateStatus('Thinking', 'Processing request...', 'thinking');
+                sendAudioBuffer(audioBuffer);
+                audioBuffer = [];
+                isSpeaking = false;
                 silenceFrames = 0;
-                audioBuffer.push(pcm16);
-            } else if (isSpeaking) {
-                silenceFrames++;
-                audioBuffer.push(pcm16);
-                
-                if (silenceFrames > MAX_SILENCE_FRAMES && audioBuffer.length > MIN_SPEECH_FRAMES) {
-                    updateStatus('Thinking...', 'Processing request...', 'thinking');
-                    sendAudioBuffer(audioBuffer);
-                    audioBuffer = [];
-                    isSpeaking = false;
-                    silenceFrames = 0;
-                }
             }
-        } catch (err) {
-            console.error('Error processing mic stream:', err);
         }
     };
 
@@ -204,10 +220,37 @@ function sendAudioBuffer(buffers) {
     }
 }
 
+function animateVisualizer() {
+    if (!playbackAnalyser) return;
+    var dataArray = new Uint8Array(playbackAnalyser.frequencyBinCount);
+
+    function draw() {
+        if (!playbackAnalyser || !isAudioPlaying) {
+            for (var i = 0; i < bars.length; i++) {
+                bars[i].style.height = '12px';
+            }
+            return;
+        }
+
+        requestAnimationFrame(draw);
+
+        try {
+            playbackAnalyser.getByteFrequencyData(dataArray);
+            for (var i = 0; i < bars.length; i++) {
+                var value = dataArray[i] || 0;
+                var barHeight = Math.max(8, (value / 255) * 110);
+                bars[i].style.height = barHeight + 'px';
+            }
+        } catch (err) {
+            console.error('Visualizer render error:', err);
+        }
+    }
+    draw();
+}
+
 function playIncomingAudio(arrayBuffer) {
     try {
         stopPlayback();
-        visualizer.classList.remove('idle');
 
         isSpeaking = false;
         silenceFrames = 0;
@@ -215,15 +258,16 @@ function playIncomingAudio(arrayBuffer) {
 
         isAudioPlaying = true;
         isProcessing = false;
-        updateStatus('Talking...', 'AI is responding', 'talking');
+        updateStatus('Talking', 'AI is responding...', 'talking');
 
         if (!playbackAnalyser) {
             playbackAnalyser = audioCtx.createAnalyser();
             playbackAnalyser.fftSize = 32;
             playbackAnalyser.smoothingTimeConstant = 0.8;
             playbackAnalyser.connect(audioCtx.destination);
-            animateVisualizer();
         }
+
+        animateVisualizer();
 
         audioCtx.decodeAudioData(arrayBuffer, function(decodedAudio) {
             currentAudioSource = audioCtx.createBufferSource();
@@ -234,7 +278,6 @@ function playIncomingAudio(arrayBuffer) {
             currentAudioSource.onended = function() {
                 currentAudioSource = null;
                 isAudioPlaying = false;
-                visualizer.classList.add('idle');
                 isProcessing = false;
                 
                 if (isRecording && ws && ws.readyState === WebSocket.OPEN) {
@@ -255,7 +298,6 @@ function playIncomingAudio(arrayBuffer) {
 }
 
 function resetAudioState() {
-    visualizer.classList.add('idle');
     isAudioPlaying = false;
     isProcessing = false;
     if (isRecording && ws && ws.readyState === WebSocket.OPEN) {
@@ -274,26 +316,6 @@ function stopPlayback() {
         currentAudioSource = null;
         isAudioPlaying = false;
     }
-    visualizer.classList.add('idle');
-}
-
-function animateVisualizer() {
-    if (!playbackAnalyser) return;
-    var dataArray = new Uint8Array(playbackAnalyser.frequencyBinCount);
-
-    function draw() {
-        if (!playbackAnalyser) return;
-        requestAnimationFrame(draw);
-        try {
-            playbackAnalyser.getByteFrequencyData(dataArray);
-            for (var i = 0; i < bars.length; i++) {
-                var value = dataArray[i] || 0;
-                var barHeight = Math.max(8, (value / 255) * 110);
-                bars[i].style.height = barHeight + 'px';
-            }
-        } catch (err) {}
-    }
-    draw();
 }
 
 function stopSession() {
@@ -338,5 +360,4 @@ function stopSession() {
 
     startBtn.disabled = false;
     stopBtn.disabled = true;
-    visualizer.classList.add('idle');
 }
