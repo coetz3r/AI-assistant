@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LUNA — AI Activity</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/monitor.css">
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-eyebrow">LUNA</span>
+      <span class="brand-title">System Telemetry</span>
+    </div>
+    <nav class="tabs">
+      <a href="/monitor" class="tab-link">Overview</a>
+      <a href="/monitor/ai" class="tab-link active">AI Activity</a>
+      <a href="/monitor/network" class="tab-link">Network</a>
+      <a href="/monitor/process" class="tab-link">Processes</a>
+    </nav>
+    <div class="conn-status" id="connStatus">
+      <span class="conn-dot" id="connDot"></span>
+      <span id="connLabel">connecting…</span>
+      <span class="conn-time" id="connTime"></span>
+    </div>
+  </header>
+
+  <main class="grid">
+
+    <!-- ENGINE OVERVIEW -->
+    <section class="panel panel--wide" id="panel-engine">
+      <div class="panel-head">
+        <span class="panel-label">Engine Overview</span>
+        <span class="panel-sub" id="engineActive">0 active connections</span>
+      </div>
+      <div class="panel-body panel-body--engine">
+        <div class="big-stat-row">
+          <div class="big-stat">
+            <span class="big-stat-num" id="engTotal">0</span>
+            <span class="big-stat-label">Total turns</span>
+          </div>
+          <div class="big-stat">
+            <span class="big-stat-num" id="engLatency">—</span>
+            <span class="big-stat-label">Last latency</span>
+          </div>
+          <div class="big-stat">
+            <span class="big-stat-num" id="engAvgLatency">—</span>
+            <span class="big-stat-label">Avg latency</span>
+          </div>
+          <div class="big-stat">
+            <span class="big-stat-num backend-badge" id="engBackend">—</span>
+            <span class="big-stat-label">Last backend</span>
+          </div>
+        </div>
+        <div class="split-bar-wrap">
+          <div class="split-bar">
+            <div class="split-bar-local" id="splitLocal"></div>
+            <div class="split-bar-cloud" id="splitCloud"></div>
+          </div>
+          <div class="split-legend">
+            <span><span class="ro-dot ro-dot--local"></span>local <span id="splitLocalNum">0</span></span>
+            <span><span class="ro-dot ro-dot--cloud"></span>cloud <span id="splitCloudNum">0</span></span>
+          </div>
+        </div>
+        <canvas id="latSpark" width="900" height="70"></canvas>
+      </div>
+    </section>
+
+    <!-- MEMORY & LEARNING -->
+    <section class="panel" id="panel-mem-learning">
+      <div class="panel-head">
+        <span class="panel-label">Memory &amp; Learning</span>
+      </div>
+      <div class="panel-body">
+        <div class="detail-row"><span>Facts learned</span><span id="memFacts">—</span></div>
+        <div class="detail-row"><span>Conversations logged</span><span id="memConvos">—</span></div>
+        <div class="detail-row"><span>Session ID</span><span id="memSession">—</span></div>
+        <div class="detail-row"><span>Last saved</span><span id="memSaved">—</span></div>
+      </div>
+    </section>
+
+    <!-- RECENT TURNS -->
+    <section class="panel" id="panel-turns" style="grid-column: span 2;">
+      <div class="panel-head">
+        <span class="panel-label">Recent Turns</span>
+      </div>
+      <div class="panel-body">
+        <table class="data-table">
+          <thead>
+            <tr><th>Time</th><th>User said</th><th>Backend</th><th class="num">Latency</th></tr>
+          </thead>
+          <tbody id="turnsBody">
+            <tr><td colspan="4" class="empty-note">Waiting for the first turn…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="/static/monitor-common.js"></script>
+  <script src="/static/ai.js"></script>
+</body>
+</html>

@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LUNA — Network</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/monitor.css">
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-eyebrow">LUNA</span>
+      <span class="brand-title">System Telemetry</span>
+    </div>
+    <nav class="tabs">
+      <a href="/monitor" class="tab-link">Overview</a>
+      <a href="/monitor/ai" class="tab-link">AI Activity</a>
+      <a href="/monitor/network" class="tab-link active">Network</a>
+      <a href="/monitor/process" class="tab-link">Processes</a>
+    </nav>
+    <div class="conn-status" id="connStatus">
+      <span class="conn-dot" id="connDot"></span>
+      <span id="connLabel">connecting…</span>
+      <span class="conn-time" id="connTime"></span>
+    </div>
+  </header>
+
+  <main class="grid">
+
+    <!-- THROUGHPUT -->
+    <section class="panel panel--wide" id="panel-net">
+      <div class="panel-head">
+        <span class="panel-label">Live Throughput</span>
+        <span class="panel-sub" id="wifiSignal">—</span>
+      </div>
+      <div class="panel-body panel-body--spark">
+        <div class="big-stat-row">
+          <div class="big-stat">
+            <span class="big-stat-num" id="netUp">—</span>
+            <span class="big-stat-label">Upload</span>
+          </div>
+          <div class="big-stat">
+            <span class="big-stat-num" id="netDown">—</span>
+            <span class="big-stat-label">Download</span>
+          </div>
+        </div>
+        <canvas id="netSpark" width="900" height="120"></canvas>
+        <div class="spark-readout">
+          <div><span class="ro-dot ro-dot--up"></span>upload</div>
+          <div><span class="ro-dot ro-dot--down"></span>download</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- WIFI -->
+    <section class="panel" id="panel-wifi" style="grid-column: span 2;">
+      <div class="panel-head">
+        <span class="panel-label">Wireless Link</span>
+      </div>
+      <div class="panel-body">
+        <div class="detail-row"><span>Interface</span><span id="wifiIface">—</span></div>
+        <div class="detail-row"><span>Link quality</span><span id="wifiQuality">—</span></div>
+        <div class="detail-row"><span>Signal</span><span id="wifiDbm">—</span></div>
+      </div>
+      <div class="panel-foot panel-foot--note" id="wifiNote"></div>
+    </section>
+
+    <!-- TOTALS -->
+    <section class="panel" id="panel-totals">
+      <div class="panel-head">
+        <span class="panel-label">Totals Since Boot</span>
+      </div>
+      <div class="panel-body">
+        <div class="detail-row"><span>Sent</span><span id="totalSent">—</span></div>
+        <div class="detail-row"><span>Received</span><span id="totalRecv">—</span></div>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="/static/monitor-common.js"></script>
+  <script src="/static/network.js"></script>
+</body>
+</html>

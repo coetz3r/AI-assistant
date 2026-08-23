@@ -189,8 +189,22 @@ async def handle_monitor_page(request):
     return web.FileResponse('./static/monitor.html')
 
 
+async def handle_monitor_ai_page(request):
+    return web.FileResponse('./static/ai.html')
+
+
+async def handle_monitor_network_page(request):
+    return web.FileResponse('./static/network.html')
+
+
+async def handle_monitor_process_page(request):
+    return web.FileResponse('./static/process.html')
+
+
 async def handle_monitor_ws(request):
-    """Pushes a JSON telemetry snapshot once a second to the monitor UI."""
+    """Pushes a JSON telemetry snapshot once a second to every monitor page
+    (overview, AI activity, network, processes) — they all share this one
+    feed and each just reads the fields it cares about."""
     ws = web.WebSocketResponse()
     await ws.prepare(request)
     print("Monitor client connected")
@@ -198,7 +212,7 @@ async def handle_monitor_ws(request):
     try:
         while True:
             snapshot = stats_collector.collect_all(
-                engine_stats=engine.stats,
+                engine_stats=engine.get_dashboard_stats(),
                 active_connections=len(active_voice_connections),
             )
             await ws.send_str(json.dumps(snapshot))
@@ -225,6 +239,9 @@ app.router.add_get('/', handle_index)
 app.router.add_get('/ws', handle_websocket)
 app.router.add_get('/api/status', handle_text)
 app.router.add_get('/monitor', handle_monitor_page)
+app.router.add_get('/monitor/ai', handle_monitor_ai_page)
+app.router.add_get('/monitor/network', handle_monitor_network_page)
+app.router.add_get('/monitor/process', handle_monitor_process_page)
 app.router.add_get('/ws/monitor', handle_monitor_ws)
 
 

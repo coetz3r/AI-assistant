@@ -22,6 +22,10 @@ class SystemStats:
         self._gpu_busy_path = None
         self._gpu_temp_path = None
         self._gpu_probed = False
+        # cache live psutil.Process handles so cpu_percent() reflects a real
+        # interval instead of the meaningless 0.0 every process returns on
+        # its first-ever call
+        self._process_cache = {}
 
     # ---------------------------------------------------------------- CPU --
     def cpu(self):
@@ -115,6 +119,8 @@ class SystemStats:
                 "available": True,
                 "sent_kbps": round(sent_kbps, 1),
                 "recv_kbps": round(recv_kbps, 1),
+                "sent_total_mb": round(now.bytes_sent / 1024 / 1024, 1),
+                "recv_total_mb": round(now.bytes_recv / 1024 / 1024, 1),
                 "wifi": self._wifi_signal(),
             }
             return result
@@ -146,6 +152,53 @@ class SystemStats:
             pass
         return {"available": False}
 
+    # ------------------------------------------------------------ Process --
+    def processes(self, limit=8):
+        try:
+            current_pids = set(psutil.pids())
+
+            # drop cached handles for processes that have since exited
+            for pid in list(self._process_cache.keys()):
+                if pid not in current_pids:
+                    del self._process_cache[pid]
+
+            rows = []
+            for pid in current_pids:
+                proc = self._process_cache.get(pid)
+                if proc is None:
+                    try:
+                        proc = psutil.Process(pid)
+                        # Prime the internal timer. This first call always
+                        # returns a meaningless 0.0 / non-blocking value —
+                        # the real percentage only shows up on the *next*
+                        # tick, once there's an actual interval to measure.
+                        proc.cpu_percent(None)
+                        self._process_cache[pid] = proc
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        continue
+                try:
+                    with proc.oneshot():
+                        name = proc.name()
+                        cpu = proc.cpu_percent(None)
+                        mem = proc.memory_percent()
+                    rows.append({
+                        "pid": pid,
+                        "name": name,
+                        "cpu_percent": round(cpu, 1),
+                        "memory_percent": round(mem, 1),
+                    })
+                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                    continue
+
+            return {
+                "available": True,
+                "total_count": len(rows),
+                "top_cpu": sorted(rows, key=lambda r: r["cpu_percent"], reverse=True)[:limit],
+                "top_memory": sorted(rows, key=lambda r: r["memory_percent"], reverse=True)[:limit],
+            }
+        except Exception as e:
+            return {"available": False, "note": str(e)}
+
     # ------------------------------------------------------------------- --
     def collect_all(self, engine_stats=None, active_connections=None):
         return {
@@ -154,6 +207,7 @@ class SystemStats:
             "memory": self.memory(),
             "gpu": self.gpu(),
             "network": self.network(),
+            "processes": self.processes(),
             "engine": engine_stats or {},
             "active_connections": active_connections if active_connections is not None else 0,
         }

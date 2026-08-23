@@ -15,6 +15,12 @@
       <span class="brand-eyebrow">LUNA</span>
       <span class="brand-title">System Telemetry</span>
     </div>
+    <nav class="tabs">
+      <a href="/monitor" class="tab-link active">Overview</a>
+      <a href="/monitor/ai" class="tab-link">AI Activity</a>
+      <a href="/monitor/network" class="tab-link">Network</a>
+      <a href="/monitor/process" class="tab-link">Processes</a>
+    </nav>
     <div class="conn-status" id="connStatus">
       <span class="conn-dot" id="connDot"></span>
       <span id="connLabel">connecting…</span>
@@ -36,7 +42,9 @@
         </div>
         <div class="cores" id="cpuCores"></div>
       </div>
-      <div class="panel-foot" id="cpuLoad">load avg —</div>
+      <canvas id="cpuSpark" width="280" height="44" style="margin-top:10px;"></canvas>
+      <div class="detail-row"><span>Load avg (1/5/15m)</span><span id="cpuLoad">—</span></div>
+      <div class="detail-row"><span>Top process</span><span id="cpuTopProc">—</span></div>
     </section>
 
     <!-- MEMORY -->
@@ -62,6 +70,9 @@
           </div>
         </div>
       </div>
+      <canvas id="memSpark" width="280" height="44" style="margin-top:10px;"></canvas>
+      <div class="detail-row"><span>Available</span><span id="memAvailable">—</span></div>
+      <div class="detail-row"><span>Top process</span><span id="memTopProc">—</span></div>
     </section>
 
     <!-- GPU -->
@@ -75,65 +86,37 @@
           <div class="dial-value" id="gpuValue">--<span class="unit">%</span></div>
         </div>
       </div>
+      <canvas id="gpuSpark" width="280" height="44" style="margin-top:10px;"></canvas>
       <div class="panel-foot panel-foot--note" id="gpuNote"></div>
-    </section>
-
-    <!-- NETWORK -->
-    <section class="panel panel--wide" id="panel-net">
-      <div class="panel-head">
-        <span class="panel-label">Network</span>
-        <span class="panel-sub" id="wifiSignal">—</span>
-      </div>
-      <div class="panel-body panel-body--spark">
-        <canvas id="netSpark" width="600" height="90"></canvas>
-        <div class="spark-readout">
-          <div><span class="ro-dot ro-dot--up"></span>up <span id="netUp">—</span></div>
-          <div><span class="ro-dot ro-dot--down"></span>down <span id="netDown">—</span></div>
-        </div>
-      </div>
-    </section>
-
-    <!-- AI ENGINE -->
-    <section class="panel panel--wide" id="panel-engine">
-      <div class="panel-head">
-        <span class="panel-label">AI Engine</span>
-        <span class="panel-sub" id="engineActive">0 active</span>
-      </div>
-      <div class="panel-body panel-body--engine">
-        <div class="engine-stats">
-          <div class="stat">
-            <span class="stat-num" id="engTotal">0</span>
-            <span class="stat-label">turns</span>
-          </div>
-          <div class="stat">
-            <span class="stat-num" id="engLatency">—</span>
-            <span class="stat-label">last latency</span>
-          </div>
-          <div class="stat">
-            <span class="stat-num" id="engAvgLatency">—</span>
-            <span class="stat-label">avg latency</span>
-          </div>
-          <div class="stat">
-            <span class="stat-num backend-badge" id="engBackend">—</span>
-            <span class="stat-label">last backend</span>
-          </div>
-        </div>
-        <div class="split-bar-wrap">
-          <div class="split-bar">
-            <div class="split-bar-local" id="splitLocal"></div>
-            <div class="split-bar-cloud" id="splitCloud"></div>
-          </div>
-          <div class="split-legend">
-            <span><span class="ro-dot ro-dot--local"></span>local <span id="splitLocalNum">0</span></span>
-            <span><span class="ro-dot ro-dot--cloud"></span>cloud <span id="splitCloudNum">0</span></span>
-          </div>
-        </div>
-        <canvas id="latSpark" width="600" height="60"></canvas>
-      </div>
     </section>
 
   </main>
 
+  <div class="chip-strip">
+    <a href="/monitor/ai" class="chip-link">
+      <div>
+        <div class="chip-label">AI Activity</div>
+        <div class="chip-value" id="chipAi">—</div>
+      </div>
+      <span class="chip-arrow">→</span>
+    </a>
+    <a href="/monitor/network" class="chip-link">
+      <div>
+        <div class="chip-label">Network</div>
+        <div class="chip-value" id="chipNet">—</div>
+      </div>
+      <span class="chip-arrow">→</span>
+    </a>
+    <a href="/monitor/process" class="chip-link">
+      <div>
+        <div class="chip-label">Processes</div>
+        <div class="chip-value" id="chipProc">—</div>
+      </div>
+      <span class="chip-arrow">→</span>
+    </a>
+  </div>
+
+  <script src="/static/monitor-common.js"></script>
   <script src="/static/monitor.js"></script>
 </body>
 </html>

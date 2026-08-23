@@ -4,6 +4,7 @@ import asyncio
 import json
 import multiprocessing
 import threading
+from collections import deque
 from datetime import datetime
 from llama_cpp import Llama
 from faster_whisper import WhisperModel
@@ -70,6 +71,10 @@ class AIEngine:
             "last_latency_ms": None,
             "avg_latency_ms": None,
         }
+
+        # Rolling log of recent turns for the "AI Activity" monitor page —
+        # newest first once read via get_dashboard_stats().
+        self.recent_turns = deque(maxlen=20)
 
     def load_memory(self):
         default_memory = {
@@ -270,6 +275,12 @@ class AIEngine:
         self.stats["avg_latency_ms"] = round(
             latency_ms if prev_avg is None else (prev_avg * (n - 1) + latency_ms) / n, 1
         )
+        self.recent_turns.appendleft({
+            "timestamp": datetime.now().isoformat(),
+            "user_snippet": user_text[:80],
+            "backend": backend_used,
+            "latency_ms": round(latency_ms, 1),
+        })
 
         if self.use_external_api:
             # Groq bg memory task
@@ -294,6 +305,19 @@ class AIEngine:
                 self.save_memory()
         except Exception as e:
             print(f"Background memory update failed: {e}")
+
+    def get_dashboard_stats(self):
+        """Everything the /monitor dashboard's AI Activity page needs, in
+        one call: live request/latency counters, the recent-turns log, and
+        a snapshot of long-term memory growth."""
+        return {
+            **self.stats,
+            "recent_turns": list(self.recent_turns),
+            "total_facts": len(self.long_term_memory.get("facts", [])),
+            "total_conversations": len(self.long_term_memory.get("conversation_history", [])),
+            "session_id": self.session_id,
+            "last_saved": self.last_save_time.isoformat() if self.last_save_time else None,
+        }
 
     def synthesize_speech(self, text, output_path="static/output.wav"):
         os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
