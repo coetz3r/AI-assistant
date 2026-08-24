@@ -1,3 +1,7 @@
+![LUNA System Overview and Telemetry](img/snapshot.webp)
+
+---
+
 # AI Assistant - Self-Hosted Voice Companion
 
 A lightweight, privacy-focused, locally hosted AI voice assistant built with Python, WebSockets, and HTML5. This project turns a local Linux server into a responsive, real-time voice interface accessible from any desktop or mobile browser via secure local network or Tailscale connections.
