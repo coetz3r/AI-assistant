@@ -24,6 +24,13 @@ A lightweight, privacy-focused, locally hosted AI voice assistant built with Pyt
 
 ---
 
+## Main Files
+- ai_engine.py
+- server.py
+- app.js
+
+---
+
 ## Architecture & Data Flow
 
 1. **Client Audio Capture:** The browser captures microphone audio via the Web Audio API and streams binary PCM audio chunks over a secure WebSocket (`/ws`).

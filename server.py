@@ -32,11 +32,20 @@ async def process_audio(audio_file, ws, turn_id, stop_flag, conn_state):
         if is_stale():
             return
 
-        # Noise and hallucination filter
+        # Noise and hallucination filter. Whisper is trained on captioned
+        # web video and is well known for "hallucinating" these exact
+        # phrases out of silence, background noise, or music playing near
+        # the mic - treat them the same as an empty transcription.
         cleaned_text = user_text.strip().lower() if user_text else ""
-        ignored_phrases = ["", "[blank_audio]", "you", "thank you.", "thank you", "bye.", "bye"]
+        stripped_text = cleaned_text.strip(" .,!?")
+        ignored_phrases = {
+            "", "you", "bye", "thank you",
+            "thanks for watching", "thank you for watching",
+            "please subscribe", "subscribe to my channel", "like and subscribe",
+            "blank_audio", "silence"
+        }
 
-        if not cleaned_text or len(cleaned_text) < 2 or cleaned_text in ignored_phrases:
+        if not cleaned_text or len(stripped_text) < 2 or stripped_text in ignored_phrases:
             print("Ignored background noise or empty transcription.")
             await ws.send_str(json.dumps({"type": "no_speech"}))
             return

@@ -163,14 +163,17 @@ class AIEngine:
         except Exception as e:
             print(f"Autonomous memory extraction error: {e}")
             return []
-
-    def transcribe(self, audio_file_path, no_speech_threshold=0.6, min_avg_logprob=-1.0):
+    
+    def transcribe(self, audio_file_path, no_speech_threshold=0.6, min_avg_logprob=-1.0, max_compression_ratio=2.4):
         segments, _ = self.stt.transcribe(
             audio_file_path,
             beam_size=1,
             best_of=1,
             vad_filter=True,
-            vad_parameters=dict(min_silence_duration_ms=500)
+            vad_parameters=dict(min_silence_duration_ms=500),
+            # Don't let one garbled/hallucinated segment bias the decoding
+            # of every segment after it within this same utterance
+            condition_on_previous_text=False
         )
 
         kept_text = []
@@ -181,6 +184,11 @@ class AIEngine:
             # Low-confidence segments are frequently hallucinated words from
             # background noise rather than real speech
             if segment.avg_logprob < min_avg_logprob:
+                continue
+            # A high compression ratio means the text is abnormally
+            # repetitive ("the the the the..."), Whisper's classic
+            # hallucination signature when it's fed noise instead of speech
+            if segment.compression_ratio > max_compression_ratio:
                 continue
             kept_text.append(segment.text)
 

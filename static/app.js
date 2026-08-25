@@ -27,6 +27,17 @@ const MIN_RMS_THRESHOLD = 0.018;   // floor so a silent room doesn't trigger on 
 const NOISE_FLOOR_MULTIPLIER = 3;  // speech must exceed ambient noise by this factor
 let noiseFloor = 0.01;             // running estimate of ambient noise, updated while not speaking
 
+// Speech onset confirmation: a single loud frame (a tap, a cough, a door)
+// crosses the RMS threshold just as easily as real speech does. Instead of
+// trusting the first loud frame, we hold it in a small pre-roll buffer and
+// only commit to "the user is speaking" once several consecutive frames
+// stay loud. The pre-roll is kept and prepended once confirmed, so the
+// first syllables aren't lost while we wait to be sure.
+const SPEECH_ONSET_FRAMES = 3;             // ~384ms of sustained level before we trust it's real speech starting
+const CONTINUATION_THRESHOLD_MULTIPLIER = 0.6;  // once speech has been confirmed, allow the level to dip lower before it counts as silence
+let onsetFrames = 0;
+let onsetBuffer = [];
+
 // Barge-in: interrupting the AI mid-reply
 const BARGE_IN_RMS_MULTIPLIER = 4.5;  // stricter than normal speech threshold — avoid tripping on residual TTS bleed through the mic
 const BARGE_IN_CONFIRM_FRAMES = 4;    // ~512ms of sustained loud speech before we trust it as a real interruption
@@ -98,6 +109,8 @@ async function startVoiceSession() {
             isSpeaking = false;
             audioBuffer = [];
             silenceFrames = 0;
+            onsetFrames = 0;
+            onsetBuffer = [];
             turnId = 0;
             pendingResponseTurnId = null;
             bargeInFrames = 0;
@@ -216,6 +229,7 @@ function setupMicStreaming() {
         }
 
         var effectiveThreshold = Math.max(MIN_RMS_THRESHOLD, noiseFloor * NOISE_FLOOR_MULTIPLIER);
+        var continuationThreshold = effectiveThreshold * CONTINUATION_THRESHOLD_MULTIPLIER;
 
         var pcm16 = new Int16Array(inputData.length);
         for (var j = 0; j < inputData.length; j++) {
@@ -223,27 +237,51 @@ function setupMicStreaming() {
             pcm16[j] = sample * 0x7FFF;
         }
 
-        if (rms > effectiveThreshold) {
-            if (!isSpeaking) {
-                isSpeaking = true;
-                updateStatus('Listening', 'Recording...', 'listening');
+        if (isSpeaking) {
+            // Already confirmed as real speech - use the lower continuation
+            // threshold (hysteresis) so a quieter word or a brief natural
+            // pause mid-sentence doesn't get counted as trailing silence.
+            if (rms > continuationThreshold) {
+                silenceFrames = 0;
+            } else {
+                silenceFrames++;
             }
-            silenceFrames = 0;
             audioBuffer.push(pcm16);
-        } else if (isSpeaking) {
-            silenceFrames++;
-            audioBuffer.push(pcm16);
-            
+
             if (silenceFrames > MAX_SILENCE_FRAMES && audioBuffer.length > MIN_SPEECH_FRAMES) {
                 updateStatus('Thinking', 'Processing request...', 'thinking');
                 sendAudioBuffer(audioBuffer);
                 audioBuffer = [];
                 isSpeaking = false;
                 silenceFrames = 0;
+                onsetFrames = 0;
+                onsetBuffer = [];
+            }
+        } else if (rms > effectiveThreshold) {
+            // Loud enough to maybe be speech - but don't commit on a single
+            // frame, since short transient noises (taps, coughs, a door)
+            // cross this threshold just as easily as a real word starting.
+            // Hold it in the pre-roll buffer until we've seen it sustain.
+            onsetFrames++;
+            onsetBuffer.push(pcm16);
+
+            if (onsetFrames >= SPEECH_ONSET_FRAMES) {
+                isSpeaking = true;
+                updateStatus('Listening', 'Recording...', 'listening');
+                silenceFrames = 0;
+                audioBuffer = onsetBuffer;   // keep the pre-roll so the first syllables aren't clipped
+                onsetBuffer = [];
+                onsetFrames = 0;
             }
         } else {
-            // Not speaking: slowly track ambient noise so the threshold
-            // adapts to the room instead of staying fixed.
+            // Quiet frame while not speaking: either a noise blip that
+            // didn't sustain long enough to confirm (drop the pre-roll) or
+            // genuine silence, in which case track it as the ambient noise
+            // floor so the threshold adapts to the room.
+            if (onsetFrames > 0) {
+                onsetFrames = 0;
+                onsetBuffer = [];
+            }
             noiseFloor = noiseFloor * 0.95 + rms * 0.05;
         }
     };
@@ -403,6 +441,8 @@ function stopSession() {
     isSpeaking = false;
     audioBuffer = [];
     silenceFrames = 0;
+    onsetFrames = 0;
+    onsetBuffer = [];
     pendingResponseTurnId = null;
     bargeInFrames = 0;
 
