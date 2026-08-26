@@ -6,6 +6,7 @@ import multiprocessing
 import threading
 import time
 import re
+import sqlite3
 from collections import deque
 from datetime import datetime
 from llama_cpp import Llama
@@ -198,7 +199,14 @@ class AIEngine:
 
     def transcribe(self, audio_file_path):
         start_t = time.time()
-        segments, _ = self.stt.transcribe(audio_file_path, beam_size=1, vad_filter=True)
+        segments, _ = self.stt.transcribe(
+            audio_file_path, 
+            beam_size=1, 
+            vad_filter=True,
+            compression_ratio_threshold=2.4,
+            condition_on_previous_text=False,
+        )
+        
         text = "".join([s.text for s in segments]).strip()
         print(f"[STT] Transcribed in {time.time() - start_t:.2f}s")
         return text
@@ -207,10 +215,7 @@ class AIEngine:
         start_t = time.time()
         os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
         with wave.open(output_path, "wb") as wav_file:
-            wav_file.setnchannels(1)
-            wav_file.setsampwidth(2)
-            wav_file.setframerate(self.tts_voice.config.sample_rate)
-            self.tts_voice.synthesize(text, wav_file)
+            self.tts_voice.synthesize_wav(text, wav_file)
         print(f"[TTS] Synthesized in {time.time() - start_t:.2f}s")
         return output_path
 
