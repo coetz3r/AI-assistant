@@ -52,7 +52,7 @@ This was the main piece of work this session — turning the diagram into real, 
 
 ### `orchestrator.py`
 - The only module that talks to the LLM. `build_context(user_text)` runs `fast.lookup()`, then `slow.score()` on whatever came back, then (if 2+ facts scored) `fast.compare_via_reasoning()` on the top two, and returns `(system_content, mode)` — mode is `"clarification"` or `"local"`.
-- Owns the filler timer end-to-end: `_start_filler_watch()` kicks off an async watchdog on entry to `build_context()`, `_stop_filler_watch()` cancels it once fast/slow/reason finish. `on_filler_start` / `on_filler_stop` are callback hooks — **not wired to real TTS yet**, this only builds the timing skeleton (start-delay + fast's completion signal, per what you resolved earlier). Making the filler content itself sound genuine rather than robotic is still an open question, not addressed this session.
+- Owns the filler timer end-to-end: `_start_filler_watch()` kicks off an async watchdog on entry to `build_context()`, `_stop_filler_watch()` cancels it once fast/slow/reason finish. `on_filler_start` / `on_filler_stop` are callback hooks — **not wired to real TTS yet**, this only builds the timing skeleton (start-delay + fast's completion signal, per what you resolved earlier). Making the filler content itself sound genuine rather than robotic is still an open question, not addressed yet.
 - The clarification-prompt and answer-prompt text moved here from `ai_engine.py` — this is now the single place that owns what the LLM sees.
 
 ### Wiring into `ai_engine.py`
@@ -77,7 +77,7 @@ Ran two live smoke tests against a throwaway SQLite DB (`/tmp/luna_smoke*.db`) �
 1. **Empty memory + a question** → `orchestrator.build_context()` correctly returned `mode == "clarification"`.
 2. **Two facts written via `fast.write()`** — a duplicate ("favorite color is teal" submitted twice) was correctly rejected by the verifier; the two distinct facts were inserted.
 3. **After the punctuation fix**, a query touching both facts ("what color is my bicycle?") correctly retrieved both, `slow` scored and sorted them, and `fast.compare_via_reasoning()` correctly flagged the shared term ("teal") between them — that relationship got folded into the LLM's system prompt automatically.
-4. Confirmed the filler watchdog didn't fire when `fast`/`slow`/`reason` finished well inside the start-delay window.
+4. **Confirmed the filler watchdog** didn't fire when `fast`/`slow`/`reason` finished well inside the start-delay window.
 5. **Gemma's performance:** Gemma preformed fairly well during inference, latency is a concern but will work more on that. On average inference takes less than a second.
 
 All files pass `py_compile`. **Needs complete detail testing:** active Gemma inference, STT/TTS, or the WebSocket server — this sandbox has no GGUF weights, no mic/audio path, and no network access to the ML library ecosystems needed to install `llama_cpp`/`faster_whisper`/`piper`. Everything here is verified at the pipeline-logic level; it still needs a run on your actual server to confirm real-world timing and Gemma's behavior under the new prompts. 
