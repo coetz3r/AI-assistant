@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import asyncio
 import ssl
@@ -7,6 +8,8 @@ import tempfile
 import threading
 from aiohttp import web, WSMsgType
 from ai_engine import AIEngine
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'webUI'))
 from system_stats import SystemStats
 
 engine = AIEngine()
