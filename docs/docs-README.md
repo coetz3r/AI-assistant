@@ -16,10 +16,11 @@ If you're a fellow tinkerer with an old machine gathering dust, hopefully this s
 
 - [2026-08-24 — Project status](./log/2026-08-24-project_log.md)
 - [2026-08-25 — Project status](./log/2026-08-25-project_log.md)
+- [2026-08-28 — Project status](./log/2026-08-28-project_log.md)
 
 ## Stack
 
-- `llama.cpp` — local LLM inference
+- `gemma-3-270m-it-Q4_K_M.gguf` — local LLM inference
 - `faster-whisper` — speech-to-text
 - `Piper` — text-to-speech
 - `aiohttp` — WebSocket backend
