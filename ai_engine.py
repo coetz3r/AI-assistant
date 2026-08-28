@@ -13,7 +13,6 @@ from llama_cpp import Llama
 from faster_whisper import WhisperModel
 from piper import PiperVoice
 from dotenv import load_dotenv
-from groq import AsyncGroq
 from memory_manager import MemoryManager
 
 load_dotenv()
@@ -21,9 +20,8 @@ load_dotenv()
 class AIEngine:
     def __init__(
         self,
-        llm_model_path="models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
-        tts_model_path="models/en_US-lessac-medium.onnx",
-        use_external_api=True
+        llm_model_path="models/gemma-3-270m-it-Q4_K_M.gguf",
+        tts_model_path="models/en_US-lessac-medium.onnx"
     ):
         num_cores = max(1, multiprocessing.cpu_count() // 2)
         
@@ -37,15 +35,11 @@ class AIEngine:
             verbose=False
         )
 
-        # 2. External (Only for heavy fallback generation, not memory)
-        self.use_external_api = use_external_api
-        self.groq_client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
-
-        # 3. STT/TTS
+        # 2. STT/TTS
         self.stt = WhisperModel("base.en", device="cpu", compute_type="int8")
         self.tts_voice = PiperVoice.load(tts_model_path)
 
-        # 4. Memory Subsystem
+        # 3. Memory Subsystem
         self.memory = MemoryManager()
         self.session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
         
@@ -63,17 +57,18 @@ class AIEngine:
         """Uses local LLM to extract facts."""
         start_t = time.time()
         
-        # TinyLlama needs a very strict, simple prompt to behave
+        # Gemma 3 needs a very strict, simple prompt to behave
         prompt = (
-            f"<|system|>\nYou are a memory extractor. Extract 1-2 permanent facts about the user from this chat. "
-            f"Ignore fluff. Output ONLY valid JSON: {{\"facts\": [\"content\", importance(1-10)]}}<|user|>\n"
-            f"User: {user_text}\nAI: {assistant_response}\n<|assistant|>\n"
+            "<start_of_turn>system\nYou are a memory extractor. Extract 1-2 permanent facts about the user from this chat. "
+            "Ignore fluff. Output ONLY valid JSON: {\"facts\": [\"content\", importance(1-10)]}<end_of_turn>\n"
+            f"<start_of_turn>user\nUser: {user_text}\nAI: {assistant_response}<end_of_turn>\n"
+            "<start_of_turn>model\n"
         )
 
         loop = asyncio.get_event_loop()
         output = await loop.run_in_executor(
             None, 
-            lambda: self.llm(prompt, max_tokens=128, temperature=0.1, stop=["<|user|>"])
+            lambda: self.llm(prompt, max_tokens=128, temperature=0.1, stop=["<end_of_turn>", "<eos>"])
         )
         
         raw_text = output["choices"][0]["text"].strip()
@@ -117,30 +112,18 @@ class AIEngine:
         history = [{"role": "system", "content": system_content}, {"role": "user", "content": user_text}]
 
         # 3. GENERATION
-        is_heavy = len(user_text.split()) > 30 or "code" in user_text.lower()
         reply = ""
         backend = "local"
 
-        if not is_heavy:
-            loop = asyncio.get_event_loop()
-            reply = await loop.run_in_executor(
-                None, 
-                lambda: self._run_local_llm_sync(history, stop_flag)
-            )
-        
-        if not reply and self.use_external_api:
-            print("[LLM] Offloading to Groq...")
-            try:
-                resp = await self.groq_client.chat.completions.create(
-                    model="llama3-8b-8192",
-                    messages=history,
-                    max_tokens=256
-                )
-                reply = resp.choices[0].message.content.strip()
-                backend = "groq"
-            except Exception as e:
-                reply = "I'm having trouble connecting."
-                backend = "error"
+        loop = asyncio.get_event_loop()
+        reply = await loop.run_in_executor(
+            None, 
+            lambda: self._run_local_llm_sync(history, stop_flag)
+        )
+
+        if not reply:
+            reply = "I'm having trouble generating a response."
+            backend = "error"
 
         # 4. STATS & LOGGING
         latency_ms = (time.time() - turn_start) * 1000
@@ -154,17 +137,17 @@ class AIEngine:
         return reply
 
     def _run_local_llm_sync(self, messages, stop_flag):
-        # Convert Chat ML for TinyLlama
+        # Convert Chat ML for Gemma 3 (Gemma-style turn markers)
         prompt = ""
         for m in messages:
-            prompt += f"<|{m['role']}|>\n{m['content']}\n"
-        prompt += "<|assistant|>\n"
-        
+            prompt += f"<start_of_turn>{m['role']}\n{m['content']}<end_of_turn>\n"
+        prompt += "<start_of_turn>model\n"
+
         output = self.llm(
             prompt,
             max_tokens=256,
             temperature=0.7,
-            stop=["<|user|>", "<|system|>"],
+            stop=["<end_of_turn>", "<eos>", "<start_of_turn>", "<end_of_text>"],
             stream=False # Keep sync for executor
         )
         return output["choices"][0]["text"].strip()

@@ -5,8 +5,6 @@ Reads CPU / memory / (best-effort) AMD GPU / network+WiFi stats without
 external services. Every collector is wrapped so a missing sysfs path or
 unsupported driver degrades to {"available": False, "note": "..."} instead
 of crashing the monitor feed.
-
-Requires: psutil  (pip install psutil)
 """
 import os
 import time

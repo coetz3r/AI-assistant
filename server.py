@@ -195,19 +195,19 @@ async def handle_websocket(request):
 
 
 async def handle_monitor_page(request):
-    return web.FileResponse('./static/monitor.html')
+    return web.FileResponse('./webUI/monitor.html')
 
 
 async def handle_monitor_ai_page(request):
-    return web.FileResponse('./static/ai.html')
+    return web.FileResponse('./webUI/ai.html')
 
 
 async def handle_monitor_network_page(request):
-    return web.FileResponse('./static/network.html')
+    return web.FileResponse('./webUI/network.html')
 
 
 async def handle_monitor_process_page(request):
-    return web.FileResponse('./static/process.html')
+    return web.FileResponse('./webUI/process.html')
 
 
 async def handle_monitor_ws(request):
@@ -216,7 +216,6 @@ async def handle_monitor_ws(request):
     feed and each just reads the fields it cares about."""
     ws = web.WebSocketResponse()
     await ws.prepare(request)
-    print("Monitor client connected")
 
     try:
         while True:
@@ -231,7 +230,7 @@ async def handle_monitor_ws(request):
     except Exception as e:
         print(f"Monitor feed error: {e}")
     finally:
-        print("Monitor client disconnected")
+        pass
 
     return ws
 
