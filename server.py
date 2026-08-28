@@ -17,7 +17,7 @@ stats_collector = SystemStats()
 active_voice_connections = set()
 
 app = web.Application()
-app.router.add_static('/static', path='static', name='static')
+app.router.add_static('/webUI', path='webUI', name='webUI')
 
 
 async def process_audio(audio_file, ws, turn_id, stop_flag, conn_state):
