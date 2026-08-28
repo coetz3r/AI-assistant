@@ -78,9 +78,9 @@ Ran two live smoke tests against a throwaway SQLite DB (`/tmp/luna_smoke*.db`) �
 2. **Two facts written via `fast.write()`** — a duplicate ("favorite color is teal" submitted twice) was correctly rejected by the verifier; the two distinct facts were inserted.
 3. **After the punctuation fix**, a query touching both facts ("what color is my bicycle?") correctly retrieved both, `slow` scored and sorted them, and `fast.compare_via_reasoning()` correctly flagged the shared term ("teal") between them — that relationship got folded into the LLM's system prompt automatically.
 4. Confirmed the filler watchdog didn't fire when `fast`/`slow`/`reason` finished well inside the start-delay window.
+5. **Gemma's performance:** Gemma preformed fairly well during inference, latency is a concern but will work more on that. On average inference takes less than a second.
 
-All files pass `py_compile`. **Needs complete testing:** actual Gemma inference, STT/TTS, or the WebSocket server — this sandbox has no GGUF weights, no mic/audio path, and no network access to the ML library ecosystems needed to install `llama_cpp`/`faster_whisper`/`piper`. Everything here is verified at the pipeline-logic level; it still needs a run on your actual server to confirm real-world timing and Gemma's behavior under the new prompts.
-3. **Gemma's performance:** Gemma preformed fairly well during inference, latency is a concern but will work more on that. On average inference takes less than a second.
+All files pass `py_compile`. **Needs complete detail testing:** active Gemma inference, STT/TTS, or the WebSocket server — this sandbox has no GGUF weights, no mic/audio path, and no network access to the ML library ecosystems needed to install `llama_cpp`/`faster_whisper`/`piper`. Everything here is verified at the pipeline-logic level; it still needs a run on your actual server to confirm real-world timing and Gemma's behavior under the new prompts. 
 
 ---
 
