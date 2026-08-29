@@ -1,12 +1,26 @@
 import sqlite3
 import json
+import os
+import re
 from datetime import datetime
 import time
 
 class MemoryManager:
     def __init__(self, db_path="memory.db"):
+        # Anchor relative paths to this file's own directory, not the
+        # process's cwd - otherwise launching the server from a
+        # different working directory (systemd, cron, a launch script)
+        # silently opens/creates a different DB with no error at all.
+        if not os.path.isabs(db_path):
+            db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), db_path)
         self.db_path = db_path
         self._init_db()
+        self._log_status()
+
+    def _log_status(self):
+        with sqlite3.connect(self.db_path) as conn:
+            count = conn.execute("SELECT COUNT(*) FROM memories WHERE status='active'").fetchone()[0]
+        print(f"[MEMORY] Using DB at {self.db_path} ({count} active facts)")
 
     def _init_db(self):
         with sqlite3.connect(self.db_path) as conn:
@@ -33,8 +47,10 @@ class MemoryManager:
         embeddings later if needed.
         """
         start_time = time.time()
-        # Clean query for basic keyword matching
-        words = [w.lower() for w in query_text.split() if len(w) > 3]
+        # Clean query for basic keyword matching - strip punctuation so
+        # "bicycle?" still matches a stored "bicycle"
+        raw_words = re.findall(r"[a-zA-Z']+", query_text.lower())
+        words = [w for w in raw_words if len(w) > 3]
         
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row

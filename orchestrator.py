@@ -93,10 +93,8 @@ class Orchestrator:
 
         system_content = (
             "You are a direct, concise voice assistant. 1-3 short sentences only. No filler. "
-            "You have no internet access and no outside knowledge source. Answer ONLY using "
-            "the facts listed below and what the user just said in this turn - never your own "
-            "trained/background knowledge. If something isn't covered by these facts, say you "
-            "don't have that stored rather than guessing."
+            "When any of the facts below are relevant, treat them as ground truth about the "
+            "user and don't contradict them - otherwise, respond naturally."
         )
         if facts:
             system_content += "\nRelevant facts:\n" + "\n".join(f"- {f['content']}" for f in facts)
