@@ -237,7 +237,7 @@ async def handle_monitor_ws(request):
 
 
 async def handle_index(request):
-    raise web.HTTPFound('./index.html')
+    return web.FileResponse('./index.html')
 
 
 async def handle_text(request):
