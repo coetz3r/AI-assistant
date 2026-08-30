@@ -20,6 +20,7 @@
       <a href="/monitor/ai" class="tab-link active">AI Activity</a>
       <a href="/monitor/network" class="tab-link">Network</a>
       <a href="/monitor/process" class="tab-link">Processes</a>
+      <a href="/monitor/history" class="tab-link">History</a>
     </nav>
     <div class="conn-status" id="connStatus">
       <span class="conn-dot" id="connDot"></span>
@@ -82,8 +83,41 @@
       </div>
     </section>
 
+    <!-- PIPELINE STAGE TIMINGS -->
+    <section class="panel" id="panel-stage-timings" style="grid-column: span 2;">
+      <div class="panel-head">
+        <span class="panel-label">Pipeline Timings</span>
+        <span class="panel-sub" id="stageTurnMeta">last turn —</span>
+      </div>
+      <div class="panel-body">
+        <div class="bar-stack">
+          <div class="bar-row">
+            <span class="bar-label">VAD</span>
+            <div class="bar-track"><div class="bar-fill bar-fill--vad" id="stageVadFill"></div></div>
+            <span class="bar-num" id="stageVadNum">—</span>
+          </div>
+          <div class="bar-row">
+            <span class="bar-label">STT</span>
+            <div class="bar-track"><div class="bar-fill bar-fill--stt" id="stageSttFill"></div></div>
+            <span class="bar-num" id="stageSttNum">—</span>
+          </div>
+          <div class="bar-row">
+            <span class="bar-label">LLM</span>
+            <div class="bar-track"><div class="bar-fill bar-fill--llm" id="stageLlmFill"></div></div>
+            <span class="bar-num" id="stageLlmNum">—</span>
+          </div>
+          <div class="bar-row">
+            <span class="bar-label">TTS</span>
+            <div class="bar-track"><div class="bar-fill bar-fill--tts" id="stageTtsFill"></div></div>
+            <span class="bar-num" id="stageTtsNum">—</span>
+          </div>
+        </div>
+        <div class="panel-foot panel-foot--note" id="stageUserSnippet"></div>
+      </div>
+    </section>
+
     <!-- RECENT TURNS -->
-    <section class="panel" id="panel-turns" style="grid-column: span 2;">
+    <section class="panel panel--wide" id="panel-turns">
       <div class="panel-head">
         <span class="panel-label">Recent Turns</span>
       </div>

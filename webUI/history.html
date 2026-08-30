@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LUNA — History</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/webUI/monitor.css">
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-eyebrow">LUNA</span>
+      <span class="brand-title">System Telemetry</span>
+    </div>
+    <nav class="tabs">
+      <a href="/monitor" class="tab-link">Overview</a>
+      <a href="/monitor/ai" class="tab-link">AI Activity</a>
+      <a href="/monitor/network" class="tab-link">Network</a>
+      <a href="/monitor/process" class="tab-link">Processes</a>
+      <a href="/monitor/history" class="tab-link active">History</a>
+    </nav>
+    <div class="conn-status" id="connStatus">
+      <span id="historyMeta">loading…</span>
+    </div>
+  </header>
+
+  <main class="grid">
+
+    <!-- FULL TURN LOG -->
+    <section class="panel panel--wide" id="panel-history">
+      <div class="panel-head">
+        <span class="panel-label">Turn History</span>
+        <span class="panel-sub">persisted to disk — survives a restart</span>
+      </div>
+      <div class="panel-body">
+        <div class="history-toolbar">
+          <input type="text" id="historySearch" placeholder="Filter by text spoken or typed…">
+          <select id="historyBackendFilter">
+            <option value="">All backends</option>
+            <option value="local">Local</option>
+            <option value="groq">Groq (cloud)</option>
+          </select>
+          <select id="historyOutcomeFilter">
+            <option value="">All outcomes</option>
+            <option value="ok">OK</option>
+            <option value="cancelled">Cancelled</option>
+            <option value="error">Error</option>
+            <option value="tts_failed">TTS failed</option>
+            <option value="empty_reply">Empty reply</option>
+          </select>
+          <button id="historyRefreshBtn">Refresh</button>
+        </div>
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Src</th>
+                <th>User said</th>
+                <th>Reply</th>
+                <th>Backend</th>
+                <th>Outcome</th>
+                <th>VAD</th>
+                <th>STT</th>
+                <th>LLM</th>
+                <th>TTS</th>
+                <th class="num">Total</th>
+              </tr>
+            </thead>
+            <tbody id="historyBody">
+              <tr><td colspan="11" class="empty-note">Loading history…</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="load-more-wrap">
+          <button class="load-more-btn" id="loadMoreBtn" style="display:none;">Load older turns</button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="/webUI/monitor-common.js"></script>
+  <script src="/webUI/history.js"></script>
+</body>
+</html>

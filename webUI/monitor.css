@@ -9,6 +9,10 @@
   --crit:      #E85D4F;   /* red-orange — critical */
   --local:     #4FD8E8;
   --cloud:     #9C7DF0;
+  --vad:       #6FA8FF;   /* pipeline stage colors, Pipeline Timings panel */
+  --stt:       #4FD8E8;
+  --llm:       #9C7DF0;
+  --tts:       #5FD9A0;
   font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
 }
 
@@ -249,6 +253,10 @@ body {
 }
 
 .bar-fill--warn { background: var(--warn); }
+.bar-fill--vad { background: var(--vad); }
+.bar-fill--stt { background: var(--stt); }
+.bar-fill--llm { background: var(--llm); }
+.bar-fill--tts { background: var(--tts); }
 
 .bar-num {
   width: 66px;
@@ -468,6 +476,70 @@ body {
 .backend-pill.local { color: var(--local); background: rgba(79, 216, 232, 0.12); }
 .backend-pill.groq  { color: var(--cloud); background: rgba(156, 125, 240, 0.12); }
 .backend-pill.groq_failed, .backend-pill.unknown { color: var(--crit); background: rgba(232, 93, 79, 0.12); }
+
+.backend-pill.outcome_ok { color: var(--nominal); background: rgba(79, 216, 232, 0.12); }
+.backend-pill.outcome_cancelled { color: var(--warn); background: rgba(232, 162, 61, 0.12); }
+.backend-pill.outcome_error, .backend-pill.outcome_tts_failed, .backend-pill.outcome_empty_reply {
+  color: var(--crit); background: rgba(232, 93, 79, 0.12);
+}
+
+/* ---- History page ---- */
+.history-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.history-toolbar input, .history-toolbar select {
+  background: var(--bg);
+  border: 1px solid var(--hairline);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 7px 10px;
+  border-radius: 6px;
+}
+
+.history-toolbar input { flex: 1; min-width: 160px; }
+
+.history-toolbar button, .load-more-btn {
+  background: var(--hairline);
+  border: 1px solid var(--hairline);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 7px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.history-toolbar button:hover, .load-more-btn:hover { background: #1b232d; }
+
+.data-table td.reply-cell { color: var(--muted); }
+
+.data-table tr.history-row { cursor: default; }
+
+.stage-mini {
+  display: flex;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.stage-mini span.hl { color: var(--text); }
+
+.load-more-wrap {
+  display: flex;
+  justify-content: center;
+  padding: 14px 0 4px;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
 
 .two-col {
   display: grid;

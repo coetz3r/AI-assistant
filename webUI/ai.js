@@ -31,8 +31,52 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+function renderStageTimings(turn) {
+  const stages = [
+    { key: 'vad_ms', fillId: 'stageVadFill', numId: 'stageVadNum' },
+    { key: 'stt_ms', fillId: 'stageSttFill', numId: 'stageSttNum' },
+    { key: 'llm_ms', fillId: 'stageLlmFill', numId: 'stageLlmNum' },
+    { key: 'tts_ms', fillId: 'stageTtsFill', numId: 'stageTtsNum' },
+  ];
+
+  const metaEl = document.getElementById('stageTurnMeta');
+  const snippetEl = document.getElementById('stageUserSnippet');
+
+  if (!turn) {
+    stages.forEach(s => {
+      document.getElementById(s.fillId).style.width = '0%';
+      document.getElementById(s.numId).textContent = '—';
+    });
+    metaEl.textContent = 'last turn —';
+    snippetEl.textContent = '';
+    return;
+  }
+
+  // Bars are scaled relative to the slowest stage in this turn, so the
+  // stack always reads clearly regardless of absolute latency.
+  const maxMs = Math.max(1, ...stages.map(s => turn[s.key] || 0));
+
+  stages.forEach(s => {
+    const val = turn[s.key];
+    const fillEl = document.getElementById(s.fillId);
+    const numEl = document.getElementById(s.numId);
+    if (val == null) {
+      fillEl.style.width = '0%';
+      numEl.textContent = '—';
+    } else {
+      fillEl.style.width = Math.max(2, (val / maxMs) * 100) + '%';
+      numEl.textContent = fmtMs(val);
+    }
+  });
+
+  metaEl.textContent = fmtTime(turn.timestamp) + ' · ' + (turn.backend || 'unknown') + ' · ' + (turn.outcome || '');
+  snippetEl.textContent = turn.user_text ? ('"' + turn.user_text + '"') : '';
+}
+
 function applySnapshot(data) {
   const eng = data.engine || {};
+
+  renderStageTimings(data.latest_turn);
 
   document.getElementById('engTotal').textContent = eng.total_requests ?? 0;
   document.getElementById('engLatency').textContent = fmtMs(eng.last_latency_ms);

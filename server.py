@@ -1,10 +1,12 @@
 import os
 import json
+import time
 import asyncio
 import ssl
 import wave
 import tempfile
 import threading
+from collections import deque
 from aiohttp import web, WSMsgType
 from ai_engine import AIEngine
 from system_stats import SystemStats
@@ -16,6 +18,67 @@ stats_collector = SystemStats()
 # separate from monitor sockets themselves, which don't count as "active").
 active_voice_connections = set()
 
+# ---- Turn history (for the AI Activity stage-timing panel + History page) --
+# Kept as plain JSONL on disk (no DB dependency) so turns survive a restart
+# and can be reviewed later. `turn_history` mirrors the tail of that file in
+# memory so the live dashboard doesn't have to hit disk every second.
+HISTORY_LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs', 'history.jsonl')
+HISTORY_MEMORY_LIMIT = 200
+
+turn_history = deque(maxlen=HISTORY_MEMORY_LIMIT)
+latest_turn = None  # most recent turn's full record, incl. stage timings
+
+
+def _ensure_history_dir():
+    os.makedirs(os.path.dirname(HISTORY_LOG_PATH), exist_ok=True)
+
+
+def record_turn_history(entry):
+    """Appends a completed turn to the in-memory ring buffer (for the live
+    dashboard) and to the on-disk JSONL log (for the History page, which
+    needs turns to persist across restarts)."""
+    global latest_turn
+    turn_history.append(entry)
+    latest_turn = entry
+
+    try:
+        _ensure_history_dir()
+        with open(HISTORY_LOG_PATH, 'a') as f:
+            f.write(json.dumps(entry) + '\n')
+    except Exception as e:
+        print(f"Failed to write history log: {e}")
+
+
+def load_history_from_disk(limit=100, before=None):
+    """Reads the persisted history log, newest first. Reads the whole file
+    on each call — deliberately simple (matches this project's no-DB
+    approach) and fine at the scale of a single-user assistant's turn log."""
+    if not os.path.exists(HISTORY_LOG_PATH):
+        return []
+
+    entries = []
+    try:
+        with open(HISTORY_LOG_PATH) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entries.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+    except Exception as e:
+        print(f"Failed to read history log: {e}")
+        return []
+
+    entries.reverse()
+
+    if before is not None:
+        entries = [e for e in entries if e.get("timestamp", 0) < before]
+
+    return entries[:limit]
+
+
 app = web.Application()
 app.router.add_static('/webUI', path='webUI', name='webUI')
 app.router.add_static('/static', path='static', name='static')
@@ -23,14 +86,26 @@ app.router.add_static('/static', path='static', name='static')
 
 async def process_audio(audio_file, ws, turn_id, stop_flag, conn_state):
 
+    turn_wall_start = time.monotonic()
+    # Set by a preceding "turn_start" message if the client reports how long
+    # its own VAD spent detecting speech onset — optional, defaults to None
+    # until app.js is updated to send it (see webUI/history.html notes).
+    vad_ms = conn_state.pop("pending_vad_ms", None)
+    stt_ms = llm_ms = tts_ms = None
+    user_text = reply_text = backend_used = None
+    outcome = "error"
+
     try:
         def is_stale():
             return conn_state["turn_id"] != turn_id
 
         # Transcribe audio file
+        stt_start = time.monotonic()
         user_text = engine.transcribe(audio_file)
+        stt_ms = round((time.monotonic() - stt_start) * 1000)
 
         if is_stale():
+            outcome = "stale"
             return
 
         # Noise and hallucination filter. Whisper is trained on captioned
@@ -49,23 +124,38 @@ async def process_audio(audio_file, ws, turn_id, stop_flag, conn_state):
         if not cleaned_text or len(stripped_text) < 2 or stripped_text in ignored_phrases:
             print("Ignored background noise or empty transcription.")
             await ws.send_str(json.dumps({"type": "no_speech"}))
+            outcome = "no_speech"
             return
 
         print(f"User said: {user_text}")
 
         # Generate response — checks stop_flag between tokens so an
         # interrupt part-way through halts generation almost immediately
+        llm_start = time.monotonic()
         reply_text = await engine.generate_response(user_text, stop_flag=stop_flag)
+        llm_ms = round((time.monotonic() - llm_start) * 1000)
+
+        # Grab which backend just handled this turn straight from the
+        # engine's own dashboard stats — avoids needing a second return
+        # value from generate_response just for the monitor.
+        try:
+            backend_used = engine.get_dashboard_stats().get("last_backend")
+        except Exception:
+            backend_used = None
 
         if is_stale() or stop_flag.is_set() or not reply_text:
+            outcome = "cancelled" if (is_stale() or stop_flag.is_set()) else "empty_reply"
             return
 
         print(f"AI replied: {reply_text}")
 
         # Synthesize TTS
+        tts_start = time.monotonic()
         audio_output_path = engine.synthesize_speech(reply_text)
+        tts_ms = round((time.monotonic() - tts_start) * 1000)
 
         if is_stale() or stop_flag.is_set():
+            outcome = "cancelled"
             return
 
         if audio_output_path and os.path.exists(audio_output_path):
@@ -76,20 +166,43 @@ async def process_audio(audio_file, ws, turn_id, stop_flag, conn_state):
             await ws.send_str(json.dumps({"type": "response_turn", "turnId": turn_id}))
             await ws.send_bytes(audio_data)
             print(f"Audio response sent ({len(audio_data)} bytes)")
+            outcome = "ok"
         else:
             print("Failed to generate audio response")
             await ws.send_str(json.dumps({"type": "error", "message": "Couldn't generate a reply, try again."}))
+            outcome = "tts_failed"
 
     except asyncio.CancelledError:
         print(f"Turn {turn_id} cancelled (interrupted)")
+        outcome = "cancelled"
         raise
     except Exception as e:
         print(f"Error processing audio: {e}")
+        outcome = "error"
         try:
             await ws.send_str(json.dumps({"type": "error", "message": "Something went wrong processing that."}))
         except Exception:
             pass
     finally:
+        # Skip logging turns that never really happened (stale audio from a
+        # superseded turn, or noise/silence the filter threw out) — every
+        # other outcome, including errors and interruptions, is worth
+        # keeping so the History page reflects what actually occurred.
+        if outcome not in ("stale", "no_speech"):
+            record_turn_history({
+                "timestamp": time.time(),
+                "turn_id": turn_id,
+                "source": "voice",
+                "user_text": user_text,
+                "reply_text": reply_text,
+                "backend": backend_used,
+                "outcome": outcome,
+                "vad_ms": vad_ms,
+                "stt_ms": stt_ms,
+                "llm_ms": llm_ms,
+                "tts_ms": tts_ms,
+                "total_ms": round((time.monotonic() - turn_wall_start) * 1000),
+            })
         if os.path.exists(audio_file):
             try:
                 os.remove(audio_file)
@@ -159,6 +272,11 @@ async def handle_websocket(request):
                     turn_id = data.get("turnId")
                     if isinstance(turn_id, (int, float)):
                         conn_state["turn_id"] = turn_id
+                    # Optional: client-measured VAD onset time in ms, if
+                    # app.js is sending one (see webUI/history.html notes).
+                    vad_ms = data.get("vadMs")
+                    if isinstance(vad_ms, (int, float)):
+                        conn_state["pending_vad_ms"] = round(vad_ms)
                     continue
 
                 if data.get("type") == "interrupt":
@@ -170,17 +288,44 @@ async def handle_websocket(request):
                     user_text = data.get("text", "").strip()
                     if user_text:
                         print(f"Text query: {user_text}")
+
+                        llm_start = time.monotonic()
                         reply_text = await engine.generate_response(user_text)
+                        llm_ms = round((time.monotonic() - llm_start) * 1000)
                         print(f"AI replied: {reply_text}")
 
+                        try:
+                            backend_used = engine.get_dashboard_stats().get("last_backend")
+                        except Exception:
+                            backend_used = None
+
+                        tts_start = time.monotonic()
                         audio_output_path = engine.synthesize_speech(reply_text)
+                        tts_ms = round((time.monotonic() - tts_start) * 1000)
 
                         if audio_output_path and os.path.exists(audio_output_path):
                             with open(audio_output_path, "rb") as f:
                                 await ws.send_bytes(f.read())
                             print("Audio response sent")
+                            outcome = "ok"
                         else:
                             await ws.send_str(json.dumps({"type": "error", "message": "Couldn't generate a reply, try again."}))
+                            outcome = "tts_failed"
+
+                        record_turn_history({
+                            "timestamp": time.time(),
+                            "turn_id": None,
+                            "source": "text",
+                            "user_text": user_text,
+                            "reply_text": reply_text,
+                            "backend": backend_used,
+                            "outcome": outcome,
+                            "vad_ms": None,
+                            "stt_ms": None,
+                            "llm_ms": llm_ms,
+                            "tts_ms": tts_ms,
+                            "total_ms": llm_ms + tts_ms,
+                        })
             except json.JSONDecodeError:
                 print("Invalid JSON received")
 
@@ -211,6 +356,10 @@ async def handle_monitor_process_page(request):
     return web.FileResponse('./webUI/process.html')
 
 
+async def handle_monitor_history_page(request):
+    return web.FileResponse('./webUI/history.html')
+
+
 async def handle_monitor_ws(request):
     """Pushes a JSON telemetry snapshot once a second to every monitor page
     (overview, AI activity, network, processes) — they all share this one
@@ -223,6 +372,7 @@ async def handle_monitor_ws(request):
             snapshot = stats_collector.collect_all(
                 engine_stats=engine.get_dashboard_stats(),
                 active_connections=len(active_voice_connections),
+                latest_turn=latest_turn,
             )
             await ws.send_str(json.dumps(snapshot))
             await asyncio.sleep(1.0)
@@ -234,6 +384,25 @@ async def handle_monitor_ws(request):
         pass
 
     return ws
+
+
+async def handle_history_api(request):
+    """Returns persisted turn history for the History page, newest first.
+    ?limit=100 caps the page size; ?before=<unix ts> pages further back."""
+    try:
+        limit = int(request.query.get('limit', 100))
+    except (TypeError, ValueError):
+        limit = 100
+    limit = max(1, min(limit, 500))
+
+    before = request.query.get('before')
+    try:
+        before = float(before) if before is not None else None
+    except ValueError:
+        before = None
+
+    entries = load_history_from_disk(limit=limit, before=before)
+    return web.json_response({"entries": entries, "count": len(entries)})
 
 
 async def handle_index(request):
@@ -251,7 +420,9 @@ app.router.add_get('/monitor', handle_monitor_page)
 app.router.add_get('/monitor/ai', handle_monitor_ai_page)
 app.router.add_get('/monitor/network', handle_monitor_network_page)
 app.router.add_get('/monitor/process', handle_monitor_process_page)
+app.router.add_get('/monitor/history', handle_monitor_history_page)
 app.router.add_get('/ws/monitor', handle_monitor_ws)
+app.router.add_get('/api/history', handle_history_api)
 
 
 if __name__ == '__main__':

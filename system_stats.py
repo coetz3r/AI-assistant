@@ -198,7 +198,7 @@ class SystemStats:
             return {"available": False, "note": str(e)}
 
     # ------------------------------------------------------------------- --
-    def collect_all(self, engine_stats=None, active_connections=None):
+    def collect_all(self, engine_stats=None, active_connections=None, latest_turn=None):
         return {
             "timestamp": time.time(),
             "cpu": self.cpu(),
@@ -208,4 +208,8 @@ class SystemStats:
             "processes": self.processes(),
             "engine": engine_stats or {},
             "active_connections": active_connections if active_connections is not None else 0,
+            # Full per-stage timing breakdown (VAD/STT/LLM/TTS) for the most
+            # recently completed turn — server.py owns this, not the engine,
+            # since it's the one calling transcribe/generate/synthesize.
+            "latest_turn": latest_turn,
         }
