@@ -505,7 +505,7 @@ body {
 .history-toolbar input { flex: 1; min-width: 160px; }
 
 .history-toolbar button, .load-more-btn {
-  background: var(--hairline);
+  background: #161c24;
   border: 1px solid var(--hairline);
   color: var(--text);
   font-family: inherit;
@@ -516,7 +516,7 @@ body {
   transition: background 0.2s ease;
 }
 
-.history-toolbar button:hover, .load-more-btn:hover { background: #1b232d; }
+.history-toolbar button:hover, .load-more-btn:hover { background: var(--hairline); }
 
 .data-table td.reply-cell { color: var(--muted); }
 

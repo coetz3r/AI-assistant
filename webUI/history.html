@@ -37,7 +37,6 @@
       </div>
       <div class="panel-body">
         <div class="history-toolbar">
-          <input type="text" id="historySearch" placeholder="Filter by text spoken or typed…">
           <select id="historyBackendFilter">
             <option value="">All backends</option>
             <option value="local">Local</option>
@@ -59,8 +58,6 @@
               <tr>
                 <th>Time</th>
                 <th>Src</th>
-                <th>User said</th>
-                <th>Reply</th>
                 <th>Backend</th>
                 <th>Outcome</th>
                 <th>VAD</th>
@@ -71,7 +68,7 @@
               </tr>
             </thead>
             <tbody id="historyBody">
-              <tr><td colspan="11" class="empty-note">Loading history…</td></tr>
+              <tr><td colspan="9" class="empty-note">Loading history…</td></tr>
             </tbody>
           </table>
         </div>

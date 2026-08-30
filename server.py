@@ -79,6 +79,15 @@ def load_history_from_disk(limit=100, before=None):
     return entries[:limit]
 
 
+# Seed both from disk on startup, so the Pipeline Timings panel and Recent
+# Turns table show real data immediately after a restart instead of sitting
+# empty until a brand-new turn happens in this process.
+_seed = load_history_from_disk(limit=HISTORY_MEMORY_LIMIT)
+if _seed:
+    latest_turn = _seed[0]
+    turn_history.extend(reversed(_seed))  # oldest-first, to match live appends
+
+
 app = web.Application()
 app.router.add_static('/webUI', path='webUI', name='webUI')
 app.router.add_static('/static', path='static', name='static')
@@ -373,6 +382,7 @@ async def handle_monitor_ws(request):
                 engine_stats=engine.get_dashboard_stats(),
                 active_connections=len(active_voice_connections),
                 latest_turn=latest_turn,
+                recent_turns=list(turn_history)[-15:][::-1],
             )
             await ws.send_str(json.dumps(snapshot))
             await asyncio.sleep(1.0)

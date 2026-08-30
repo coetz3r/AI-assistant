@@ -12,15 +12,16 @@ function backendPillHtml(backend) {
 function renderRecentTurns(turns) {
   const body = document.getElementById('turnsBody');
   if (!turns || !turns.length) {
-    body.innerHTML = '<tr><td colspan="4" class="empty-note">Waiting for the first turn…</td></tr>';
+    body.innerHTML = '<tr><td colspan="5" class="empty-note">Waiting for the first turn…</td></tr>';
     return;
   }
   body.innerHTML = turns.map(t => (
     '<tr>' +
       '<td class="muted">' + fmtTime(t.timestamp) + '</td>' +
-      '<td>' + escapeHtml(t.user_snippet || '') + '</td>' +
+      '<td>' + escapeHtml(truncate(t.user_text || '', 60)) + '</td>' +
+      '<td class="reply-cell">' + escapeHtml(truncate(t.reply_text || '', 60)) + '</td>' +
       '<td>' + backendPillHtml(t.backend) + '</td>' +
-      '<td class="num">' + fmtMs(t.latency_ms) + '</td>' +
+      '<td class="num">' + fmtMs(t.total_ms) + '</td>' +
     '</tr>'
   )).join('');
 }
@@ -29,6 +30,11 @@ function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str;
   return div.innerHTML;
+}
+
+function truncate(str, max) {
+  if (!str) return '';
+  return str.length > max ? str.slice(0, max - 1) + '…' : str;
 }
 
 function renderStageTimings(turn) {
@@ -107,7 +113,7 @@ function applySnapshot(data) {
   document.getElementById('memSession').textContent = eng.session_id || '—';
   document.getElementById('memSaved').textContent = fmtTime(eng.last_saved);
 
-  renderRecentTurns(eng.recent_turns);
+  renderRecentTurns(data.recent_turns);
 }
 
 connectMonitorSocket(applySnapshot);

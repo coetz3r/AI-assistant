@@ -198,7 +198,7 @@ class SystemStats:
             return {"available": False, "note": str(e)}
 
     # ------------------------------------------------------------------- --
-    def collect_all(self, engine_stats=None, active_connections=None, latest_turn=None):
+    def collect_all(self, engine_stats=None, active_connections=None, latest_turn=None, recent_turns=None):
         return {
             "timestamp": time.time(),
             "cpu": self.cpu(),
@@ -212,4 +212,8 @@ class SystemStats:
             # recently completed turn — server.py owns this, not the engine,
             # since it's the one calling transcribe/generate/synthesize.
             "latest_turn": latest_turn,
+            # Same source as latest_turn, kept as a short rolling list so the
+            # AI Activity page's Recent Turns table can show user+reply text
+            # without depending on the engine's own dashboard stats for it.
+            "recent_turns": recent_turns or [],
         }
